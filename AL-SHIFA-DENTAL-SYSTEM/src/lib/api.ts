@@ -24,11 +24,18 @@ export const AuthAPI = {
     return api.post("/auth/login", params, { headers: { "Content-Type": "application/x-www-form-urlencoded" } });
   },
   register: async (userData) => api.post("/auth/register", { ...userData, email: userData.email.toLowerCase().trim() }),
-  verifyOTP: async (data: { email: string, otp: string }) => api.post("/auth/verify-otp", { 
-    email: data.email.toLowerCase().trim(), 
-    otp: data.otp.trim() 
+  
+  // FIX: Changed to accept two separate arguments to match your Frontend calls
+  verifyOtp: async (email: string, otp: string) => api.post("/auth/verify-otp", { 
+    email: email.toLowerCase().trim(), 
+    otp: otp.trim() 
   }),
-  getMe: async () => api.get("/auth/me")
+  
+  getMe: async () => api.get("/auth/me"),
+  getVerifiedHospitals: async () => api.get("/auth/hospitals"),
+  
+  // Doctor List for Manual Booking
+  getDoctors: async () => api.get("/doctors"),
 };
 
 export default api;

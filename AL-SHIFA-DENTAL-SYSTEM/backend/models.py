@@ -23,8 +23,13 @@ class User(Base):
     otp_expires_at = Column(DateTime, nullable=True)
 
     # Relationships
+    # 1. User <-> Doctor (One-to-One)
     doctor_profile = relationship("Doctor", back_populates="user", uselist=False)
+    
+    # 2. User <-> Patient (One-to-One)
     patient_profile = relationship("Patient", back_populates="user", uselist=False)
+    
+    # 3. User <-> Hospital (One-to-One)
     hospital = relationship("Hospital", back_populates="owner", uselist=False)
 
 class Hospital(Base):
@@ -46,9 +51,8 @@ class Hospital(Base):
     pending_lat = Column(Float, nullable=True)
     pending_lng = Column(Float, nullable=True)
 
+    # Relationships
     owner = relationship("User", back_populates="hospital")
-    
-    # FIX: back_populates must match the property name in Doctor class ('hospital')
     doctors = relationship("Doctor", back_populates="hospital")
 
 class Doctor(Base):
@@ -67,9 +71,8 @@ class Doctor(Base):
     work_end_time = Column(String, default="17:00")
     break_duration = Column(Integer, default=0)
 
+    # Relationships
     user = relationship("User", back_populates="doctor_profile")
-    
-    # This matches Hospital.doctors
     hospital = relationship("Hospital", back_populates="doctors")
     appointments = relationship("Appointment", back_populates="doctor")
 
@@ -82,7 +85,11 @@ class Patient(Base):
     gender = Column(String)
     medical_history = Column(Text, nullable=True)
 
+    # Relationships
+    # This 'user' matches User.patient_profile
     user = relationship("User", back_populates="patient_profile")
+    
+    # This 'appointments' matches Appointment.patient
     appointments = relationship("Appointment", back_populates="patient")
 
 class Appointment(Base):
@@ -94,7 +101,15 @@ class Appointment(Base):
     start_time = Column(DateTime)
     end_time = Column(DateTime)
     status = Column(String, default="scheduled")
+    
+    # NEW FIELD (Required for Dashboard)
+    treatment_type = Column(String, default="General Consultation")
+    
     notes = Column(Text, nullable=True)
 
+    # Relationships
+    # This 'doctor' matches Doctor.appointments
     doctor = relationship("Doctor", back_populates="appointments")
+    
+    # CRITICAL FIX: back_populates MUST point to 'appointments' (plural) in Patient class
     patient = relationship("Patient", back_populates="appointments")

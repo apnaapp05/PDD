@@ -1,3 +1,4 @@
+# backend/schemas.py
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
@@ -26,18 +27,16 @@ class VerifyOTP(BaseModel):
     email: str
     otp: str
 
-class ForgotPasswordRequest(BaseModel):
-    email: str
-
-class ResetPasswordRequest(BaseModel):
-    email: str
-    otp: str
-    new_password: str
+# --- APPOINTMENT SCHEMAS ---
+class AppointmentCreate(BaseModel):
+    doctor_id: int
+    date: str  # YYYY-MM-DD
+    time: str  # HH:MM AM/PM
+    reason: str
 
 # --- PROFILE UPDATE SCHEMAS ---
 
 class UserProfileUpdate(BaseModel):
-    # CRITICAL FIX: Use 'str' instead of 'EmailStr' so empty strings are allowed
     full_name: Optional[str] = None
     email: Optional[str] = None 
     phone_number: Optional[str] = None

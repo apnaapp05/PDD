@@ -2,68 +2,71 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Calendar, Clock, Plus, FileText, Phone, Sparkles, LogOut, XCircle, ChevronRight, User, CalendarDays } from "lucide-react";
 import { useRouter } from "next/navigation";
-import api from "@/lib/api"; // API Helper Import kiya
+import api from "@/lib/api"; 
 
 export default function PatientDashboard() {
   const router = useRouter();
   const [appointment, setAppointment] = useState<any>(null);
-  const [countdown, setCountdown] = useState({ h: 2, m: 45, s: 0 });
+  const [countdown, setCountdown] = useState({ h: 0, m: 0, s: 0 });
   
   // New State for User Profile
   const [userName, setUserName] = useState("Loading...");
   const [userEmail, setUserEmail] = useState("");
 
-  // 1. Check Login & Fetch Profile
+  // 1. Check Login & Fetch Profile & Appointments
   useEffect(() => {
     const token = localStorage.getItem("token");
     
-    // Agar token nahi hai, toh Login par bhejo
     if (!token) {
       router.push("/auth/patient/login");
       return;
     }
 
-    // Backend se User ka naam mangwao
-    const fetchProfile = async () => {
+    const fetchDashboardData = async () => {
       try {
-        const response = await api.get("/auth/me", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setUserName(response.data.full_name);
-        setUserEmail(response.data.email);
+        // Fetch User
+        const userRes = await api.get("/auth/me", { headers: { Authorization: `Bearer ${token}` } });
+        setUserName(userRes.data.full_name);
+        setUserEmail(userRes.data.email);
+
+        // Fetch Real Appointments
+        const apptRes = await api.get("/patient/appointments", { headers: { Authorization: `Bearer ${token}` } });
+        if (apptRes.data && apptRes.data.length > 0) {
+          // Take the latest appointment
+          const latest = apptRes.data[0]; 
+          setAppointment(latest);
+          
+          // Calculate Countdown (Basic implementation)
+          const apptTime = new Date(`${latest.date} ${latest.time}`).getTime();
+          const now = new Date().getTime();
+          const diff = apptTime - now;
+          if (diff > 0) {
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            setCountdown({ h: hours, m: minutes, s: 0 });
+          }
+        }
       } catch (error) {
-        console.error("Session Expired", error);
-        localStorage.removeItem("token");
-        router.push("/auth/patient/login");
+        console.error("Session Error", error);
+        // localStorage.removeItem("token");
+        // router.push("/auth/patient/login");
       }
     };
 
-    fetchProfile();
-
-    // Load Local Appointment (Existing Logic)
-    const saved = localStorage.getItem("latestAppointment");
-    if (saved) {
-      setAppointment(JSON.parse(saved));
-      const timer = setInterval(() => {
-        setCountdown(prev => ({ ...prev, s: prev.s === 0 ? 59 : prev.s - 1 }));
-      }, 1000);
-      return () => clearInterval(timer);
-    }
+    fetchDashboardData();
   }, [router]);
 
   const handleLogout = () => {
-    localStorage.removeItem("token"); // Clear Token
+    localStorage.removeItem("token");
     localStorage.removeItem("role");
     router.push('/auth/role-selection');
   };
 
   const handleCancel = () => {
-    if (confirm("Are you sure you want to cancel this appointment?")) {
-      localStorage.removeItem("latestAppointment");
-      setAppointment(null);
+    if (confirm("Cancellation needs to be done by calling the clinic directly in this version.")) {
+      // Future: Call Cancel API
     }
   };
 
@@ -79,7 +82,6 @@ export default function PatientDashboard() {
         <div className="relative z-10 flex justify-between items-center">
           <div>
             <p className="text-patient-light text-xs font-bold uppercase tracking-widest opacity-80">Welcome Back</p>
-            {/* DYNAMIC NAME HERE */}
             <h1 className="text-3xl font-extrabold text-white mt-1 capitalize">{userName}</h1>
             <p className="text-xs text-white/60">{userEmail}</p>
           </div>
@@ -110,9 +112,9 @@ export default function PatientDashboard() {
                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                        <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
                      </span>
-                     <span className="text-sm font-bold tracking-wide">CONFIRMED</span>
+                     <span className="text-sm font-bold tracking-wide uppercase">{appointment.status}</span>
                    </div>
-                   <div className="text-slate-400 text-xs font-mono">ID: #89201</div>
+                   <div className="text-slate-400 text-xs font-mono">ID: #{appointment.id}</div>
                  </div>
 
                  <div className="p-6">
@@ -136,8 +138,7 @@ export default function PatientDashboard() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Starts In</p>
                         <div className="flex justify-center gap-2 text-2xl font-mono font-bold text-slate-800">
                           <span>{countdown.h}<span className="text-[10px] text-slate-400 align-top ml-0.5">H</span></span>:
-                          <span>{countdown.m}<span className="text-[10px] text-slate-400 align-top ml-0.5">M</span></span>:
-                          <span className="text-patient">{countdown.s}<span className="text-[10px] text-patient/60 align-top ml-0.5">S</span></span>
+                          <span>{countdown.m}<span className="text-[10px] text-slate-400 align-top ml-0.5">M</span></span>
                         </div>
                      </div>
                    </div>
