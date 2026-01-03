@@ -1,76 +1,127 @@
 "use client";
-
-import MapLinkButton from "@/components/location/MapLinkButton";
-import { Badge } from "@/components/ui/badge"; 
+import { useEffect, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Calendar, Clock, User, Plus, Bot, Sparkles, CalendarDays } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Calendar, Clock, User2 } from "lucide-react";
+import { PatientAPI } from "@/lib/api";
 
-export default function PatientAppointments() {
-  // Mock Data (Replace with API fetch in production)
-  const appts = [
-    {
-      id: "APT_1",
-      doctor: "Dr. John Doe",
-      specialization: "Orthodontist",
-      hospital: "Al-Shifa Dental Center",
-      address: "Road No. 12, Banjara Hills",
-      date: "2025-02-10",
-      time: "10:20 AM",
-      status: "upcoming"
-    },
-    {
-      id: "APT_2",
-      doctor: "Dr. Sarah Lee",
-      specialization: "General Dentist",
-      hospital: "City Care Clinic",
-      address: "Jubilee Hills",
-      date: "2024-12-15",
-      time: "02:00 PM",
-      status: "completed"
-    }
-  ];
+export default function MyAppointmentsPage() {
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAppts = async () => {
+      try {
+        const res = await PatientAPI.getMyAppointments();
+        setAppointments(res.data);
+      } catch (error) {
+        console.error("Failed to load appointments", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAppts();
+  }, []);
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto p-6">
-      <div className="flex items-center justify-between">
-         <h1 className="text-2xl font-bold text-slate-900">Your Appointments</h1>
-         <Button variant="outline" size="sm">History</Button>
+    <div className="space-y-8">
+      
+      {/* --- Header & Actions --- */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">My Appointments</h1>
+          <p className="text-slate-500 text-sm">Manage your visits and history</p>
+        </div>
       </div>
 
-      <div className="grid gap-4">
-        {appts.map(a => (
-          <div key={a.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-            
-            {/* Info Section */}
-            <div className="flex-1 space-y-1">
-              <div className="flex items-center gap-3">
-                 <h3 className="font-bold text-lg text-slate-900">{a.doctor}</h3>
-                 <Badge variant={a.status === 'upcoming' ? 'default' : 'secondary'} className={a.status === 'upcoming' ? "bg-blue-100 text-blue-700 hover:bg-blue-200" : "bg-gray-100 text-gray-600"}>
-                    {a.status.charAt(0).toUpperCase() + a.status.slice(1)}
-                 </Badge>
-              </div>
-              <p className="text-sm text-slate-500 flex items-center gap-2">
-                 <User2 className="h-3 w-3" /> {a.specialization}
-              </p>
-              <div className="flex items-center gap-4 text-sm font-medium text-slate-700 pt-1">
-                 <span className="flex items-center gap-1"><Calendar className="h-3 w-3 text-slate-400"/> {a.date}</span>
-                 <span className="flex items-center gap-1"><Clock className="h-3 w-3 text-slate-400"/> {a.time}</span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">{a.hospital}</p>
+      {/* --- Booking Options --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* AI Booking Option */}
+        <div 
+          onClick={() => alert("AI Agent Integration coming next!")}
+          className="cursor-pointer group relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white shadow-lg transition-all hover:shadow-indigo-500/30 hover:-translate-y-1"
+        >
+          <div className="absolute right-0 top-0 h-full w-32 bg-white/10 skew-x-12 -mr-8"></div>
+          <div className="relative z-10 flex items-center gap-4">
+            <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm border border-white/20">
+              <Bot className="h-6 w-6 text-white" />
             </div>
-
-            {/* Action Section */}
-            <div className="flex items-center gap-3 w-full md:w-auto">
-               <MapLinkButton address={`${a.hospital}, ${a.address}`} />
-               {a.status === 'upcoming' && (
-                  <Button variant="destructive" size="sm" className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-100">
-                    Cancel
-                  </Button>
-               )}
+            <div>
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                Book with AI <Sparkles className="h-3 w-3 text-yellow-300" />
+              </h3>
+              <p className="text-indigo-100 text-sm">Chat to find the perfect slot</p>
             </div>
-
           </div>
-        ))}
+        </div>
+
+        {/* Manual Booking Option */}
+        <Link href="/patient/appointments/new">
+          <div className="h-full cursor-pointer group relative overflow-hidden rounded-2xl bg-white border border-slate-200 p-6 text-slate-800 shadow-sm transition-all hover:border-blue-500 hover:shadow-md">
+            <div className="relative z-10 flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                <CalendarDays className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg">Manual Booking</h3>
+                <p className="text-slate-500 text-sm">Select doctor from list</p>
+              </div>
+            </div>
+          </div>
+        </Link>
+      </div>
+
+      {/* --- Appointments List --- */}
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold text-slate-900">Upcoming Visits</h2>
+        
+        {loading ? (
+          <div className="p-10 text-center text-slate-500">Loading your schedule...</div>
+        ) : appointments.length === 0 ? (
+          <Card className="border-dashed border-2">
+            <CardContent className="flex flex-col items-center justify-center p-12 space-y-4">
+               <div className="h-16 w-16 bg-slate-50 rounded-full flex items-center justify-center">
+                 <Calendar className="h-8 w-8 text-slate-300" />
+               </div>
+               <p className="text-slate-500">You have no upcoming appointments.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4">
+            {appointments.map((appt) => (
+              <Card key={appt.id} className="hover:shadow-md transition-shadow border-slate-200">
+                <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
+                      {appt.doctor.charAt(0)}
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="font-bold text-slate-900 text-lg">{appt.treatment}</h3>
+                      <div className="flex items-center gap-2 text-slate-500 text-sm">
+                        <User className="h-3 w-3" /> Dr. {appt.doctor}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="bg-slate-50 px-3 py-1.5 rounded-md flex items-center gap-2 text-sm text-slate-700 border border-slate-100">
+                      <Calendar className="h-3 w-3 text-slate-400" /> {appt.date}
+                    </div>
+                    <div className="bg-slate-50 px-3 py-1.5 rounded-md flex items-center gap-2 text-sm text-slate-700 border border-slate-100">
+                      <Clock className="h-3 w-3 text-slate-400" /> {appt.time}
+                    </div>
+                    <div className={`px-3 py-1.5 rounded-md text-sm font-bold uppercase tracking-wider ${
+                      appt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {appt.status}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

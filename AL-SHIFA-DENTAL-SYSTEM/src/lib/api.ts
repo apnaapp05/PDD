@@ -24,18 +24,41 @@ export const AuthAPI = {
     return api.post("/auth/login", params, { headers: { "Content-Type": "application/x-www-form-urlencoded" } });
   },
   register: async (userData) => api.post("/auth/register", { ...userData, email: userData.email.toLowerCase().trim() }),
-  
-  // FIX: Changed to accept two separate arguments to match your Frontend calls
   verifyOtp: async (email: string, otp: string) => api.post("/auth/verify-otp", { 
     email: email.toLowerCase().trim(), 
     otp: otp.trim() 
   }),
-  
   getMe: async () => api.get("/auth/me"),
+  updateProfile: async (data: { full_name: string; email: string; phone_number: string; address?: string }) => 
+    api.put("/auth/profile", data),
   getVerifiedHospitals: async () => api.get("/auth/hospitals"),
-  
-  // Doctor List for Manual Booking
+};
+
+export const OrganizationAPI = {
+  getStats: async () => api.get("/organization/stats"),
+  getDoctors: async () => api.get("/organization/doctors"),
+  verifyDoctor: async (id: number) => api.post(`/organization/doctors/${id}/verify`),
+  removeDoctor: async (id: number) => api.delete(`/organization/doctors/${id}`),
+  getDetails: async () => api.get("/organization/details"),
+  requestLocationChange: async (data: { address: string; pincode: string; lat: number; lng: number }) => 
+    api.post("/organization/location-change", data),
+  getAppointments: async () => api.get("/organization/appointments"),
+  cancelAppointment: async (id: number) => api.put(`/organization/appointments/${id}/cancel`),
+};
+
+export const DoctorAPI = {
+  getDashboardStats: async () => api.get("/doctor/dashboard"),
+  // NEW: Join Organization
+  joinOrganization: async (data: { hospital_id: number; specialization: string; license_number: string }) =>
+    api.post("/doctor/join", data),
+  getAiInsights: async () => Promise.resolve({ data: [] }), 
+};
+
+export const PatientAPI = {
   getDoctors: async () => api.get("/doctors"),
+  bookAppointment: async (data: { doctor_id: number; date: string; time: string; reason: string }) => 
+    api.post("/appointments", data),
+  getMyAppointments: async () => api.get("/patient/appointments"),
 };
 
 export default api;

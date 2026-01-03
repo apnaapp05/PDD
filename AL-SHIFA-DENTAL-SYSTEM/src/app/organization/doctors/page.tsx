@@ -1,64 +1,104 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Stethoscope } from "lucide-react";
+import { UserCheck, Trash2, AlertCircle, RefreshCcw } from "lucide-react";
 import { OrganizationAPI } from "@/lib/api";
-import { Input } from "@/components/ui/input";
 
-export default function OrgDoctors() {
-  const [doctors, setDoctors] = useState([]);
+export default function OrgDoctorsPage() {
+  const [doctors, setDoctors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const fetchDoctors = async () => {
+    setLoading(true);
+    try {
+      const response = await OrganizationAPI.getDoctors();
+      setDoctors(response.data);
+    } catch (error) {
+      console.error("Failed to fetch doctors", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchDocs = async () => {
-      try {
-        const res = await OrganizationAPI.getDoctors();
-        setDoctors(res.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchDocs();
+    fetchDoctors();
   }, []);
+
+  const handleVerify = async (id: number) => {
+    if(!confirm("Are you sure you want to approve this doctor?")) return;
+    try {
+      await OrganizationAPI.verifyDoctor(id);
+      fetchDoctors(); // Refresh list
+    } catch (error) {
+      alert("Failed to verify doctor");
+    }
+  };
+
+  const handleRemove = async (id: number) => {
+    if(!confirm("Warning: This will delete the doctor account permanently. Continue?")) return;
+    try {
+      await OrganizationAPI.removeDoctor(id);
+      fetchDoctors(); // Refresh list
+    } catch (error) {
+      alert("Failed to remove doctor");
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Doctor Management</h1>
-          <p className="text-sm text-slate-500">Manage medical staff and permissions</p>
+          <h1 className="text-2xl font-bold text-slate-900">Medical Staff</h1>
+          <p className="text-sm text-slate-500">Manage doctors and permissions</p>
         </div>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-          <Plus className="mr-2 h-4 w-4" /> Add New Doctor
+        <Button variant="outline" onClick={fetchDoctors} className="flex gap-2">
+           <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </Button>
       </div>
 
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 flex items-center gap-2">
-        <Search className="h-5 w-5 text-slate-400" />
-        <Input placeholder="Search doctors by name or license..." className="border-none shadow-none focus-visible:ring-0" />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {loading ? (
-          <p className="text-slate-500 p-4">Loading staff data...</p>
-        ) : doctors.length === 0 ? (
-          <p className="text-slate-500 p-4 col-span-full text-center">No doctors registered yet.</p>
+      <div className="grid gap-4">
+        {doctors.length === 0 && !loading ? (
+           <Card>
+             <CardContent className="p-8 text-center text-slate-500">
+               No doctors found. Doctors must sign up and select your hospital to appear here.
+             </CardContent>
+           </Card>
         ) : (
-          doctors.map((doc: any) => (
-            <Card key={doc.id} className="hover:shadow-md transition-shadow cursor-pointer group">
-              <CardContent className="p-6 flex items-center gap-4">
-                <div className="h-14 w-14 rounded-full bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
-                  <Stethoscope className="h-7 w-7 text-blue-600" />
+          doctors.map((doc) => (
+            <Card key={doc.id} className="flex flex-row items-center justify-between p-4 shadow-sm border border-slate-100 hover:bg-slate-50 transition-colors">
+              <div className="flex items-center gap-4">
+                <div className={`h-12 w-12 rounded-full flex items-center justify-center font-bold text-lg 
+                  ${doc.status === 'Verified' ? 'bg-blue-100 text-blue-600' : 'bg-yellow-100 text-yellow-600'}`}>
+                  {doc.full_name.charAt(0)}
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900">{doc.name}</h3>
-                  <p className="text-sm text-blue-600 font-medium">{doc.specialization}</p>
-                  <p className="text-xs text-slate-400 mt-1">Lic: {doc.license}</p>
+                  <h3 className="font-bold text-slate-900">{doc.full_name}</h3>
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <span>{doc.specialization}</span>
+                    <span>•</span>
+                    <span className="font-mono text-xs">{doc.license}</span>
+                  </div>
+                  <div className="mt-1">
+                     <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                        doc.status === 'Verified' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                     }`}>
+                        {doc.status}
+                     </span>
+                  </div>
                 </div>
-              </CardContent>
+              </div>
+
+              <div className="flex gap-2">
+                {doc.status !== 'Verified' && (
+                  <Button onClick={() => handleVerify(doc.id)} size="sm" className="bg-green-600 hover:bg-green-700 text-white">
+                    <UserCheck className="h-4 w-4 mr-2" /> Approve
+                  </Button>
+                )}
+                <Button onClick={() => handleRemove(doc.id)} size="sm" variant="destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </Card>
           ))
         )}

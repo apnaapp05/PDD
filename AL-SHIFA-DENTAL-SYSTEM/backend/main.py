@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 import bcrypt
@@ -72,10 +72,9 @@ org_router = APIRouter(prefix="/organization", tags=["Organization"])
 doctor_router = APIRouter(prefix="/doctor", tags=["Doctor"])
 public_router = APIRouter(tags=["Public"]) 
 
-# --- PUBLIC ROUTES (Booking) ---
+# --- PUBLIC ROUTES ---
 @public_router.get("/doctors")
 def get_public_doctors(db: Session = Depends(get_db)):
-    """Returns a list of verified doctors for the booking page"""
     doctors = db.query(models.Doctor).filter(models.Doctor.is_verified == True).all()
     results = []
     for d in doctors:
@@ -85,6 +84,7 @@ def get_public_doctors(db: Session = Depends(get_db)):
             "id": d.id,
             "full_name": user.full_name if user else "Unknown",
             "specialization": d.specialization,
+            "hospital_id": hospital.id if hospital else None,
             "hospital_name": hospital.name if hospital else "Unknown",
             "location": hospital.address if hospital else "Unknown"
         })
@@ -92,30 +92,24 @@ def get_public_doctors(db: Session = Depends(get_db)):
 
 @public_router.post("/appointments")
 def create_appointment(appt: schemas.AppointmentCreate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Creates a new appointment for the logged-in patient"""
-    if user.role != "patient":
-        raise HTTPException(403, "Only patients can book appointments")
-        
+    if user.role != "patient": raise HTTPException(403, "Only patients can book")
     patient_profile = db.query(models.Patient).filter(models.Patient.user_id == user.id).first()
-    if not patient_profile:
-        raise HTTPException(400, "Patient profile not found")
-
-    # Verify Doctor Exists
+    if not patient_profile: raise HTTPException(400, "Patient profile not found")
+    
     doctor = db.query(models.Doctor).filter(models.Doctor.id == appt.doctor_id).first()
-    if not doctor:
-        raise HTTPException(404, "Doctor not found or unavailable")
+    if not doctor: raise HTTPException(404, "Doctor not found")
 
-    # Parse Date
     try:
         start_dt = datetime.strptime(f"{appt.date} {appt.time}", "%Y-%m-%d %I:%M %p")
     except ValueError:
         try:
-            # Fallback for 24hr format
-            start_dt = datetime.strptime(f"{appt.date} {appt.time}", "%Y-%m-%d %H:%M")
+             start_dt = datetime.strptime(f"{appt.date} {appt.time}", "%Y-%m-%d %H:%M")
         except ValueError:
-             raise HTTPException(400, "Invalid date/time format. Use YYYY-MM-DD and HH:MM AM/PM")
+             raise HTTPException(400, "Invalid date/time format")
+    
+    if start_dt < datetime.now():
+        raise HTTPException(400, "Cannot book in the past")
 
-    # Create Appointment
     new_appt = models.Appointment(
         doctor_id=appt.doctor_id,
         patient_id=patient_profile.id,
@@ -125,40 +119,33 @@ def create_appointment(appt: schemas.AppointmentCreate, user: models.User = Depe
         treatment_type=appt.reason,
         notes="Booked via Patient Portal"
     )
-    
-    try:
-        db.add(new_appt)
-        db.commit()
-        db.refresh(new_appt)
-    except Exception as e:
-        db.rollback()
-        print(f"Database Error: {e}")
-        raise HTTPException(500, "Failed to save appointment. Please contact support.")
-
+    db.add(new_appt); db.commit(); db.refresh(new_appt)
     return {"message": "Appointment Booked", "id": new_appt.id}
 
 @public_router.get("/patient/appointments")
 def get_my_appointments(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Fetch appointments for the logged-in patient dashboard"""
     if user.role != "patient": raise HTTPException(403, "Patients only")
-    
     patient_profile = db.query(models.Patient).filter(models.Patient.user_id == user.id).first()
     if not patient_profile: return []
 
     appointments = db.query(models.Appointment).filter(models.Appointment.patient_id == patient_profile.id).order_by(models.Appointment.start_time.desc()).all()
-    
     result = []
     for appt in appointments:
         doc = db.query(models.Doctor).filter(models.Doctor.id == appt.doctor_id).first()
         doc_user = doc.user if doc else None
+        hospital = doc.hospital if doc else None
         
         result.append({
             "id": appt.id,
             "treatment": appt.treatment_type,
-            "doctor": doc_user.full_name if doc_user else "Unknown Doctor",
+            "doctor": doc_user.full_name if doc_user else "Unknown",
             "date": appt.start_time.strftime("%Y-%m-%d"),
             "time": appt.start_time.strftime("%I:%M %p"),
-            "status": appt.status
+            "status": appt.status,
+            "hospital_name": hospital.name if hospital else "Unknown",
+            "hospital_address": hospital.address if hospital else "Unknown",
+            "hospital_lat": hospital.lat if hospital else None,
+            "hospital_lng": hospital.lng if hospital else None
         })
     return result
 
@@ -166,6 +153,15 @@ def get_my_appointments(user: models.User = Depends(get_current_user), db: Sessi
 @auth_router.get("/me", response_model=schemas.UserOut)
 def get_current_user_profile(user: models.User = Depends(get_current_user)):
     return user
+
+@auth_router.put("/profile")
+def update_profile(data: schemas.UserProfileUpdate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Update basic user profile details"""
+    user.full_name = data.full_name
+    user.email = data.email
+    user.phone_number = data.phone_number
+    db.commit()
+    return {"message": "Profile updated"}
 
 @auth_router.get("/hospitals")
 def get_verified_hospitals(db: Session = Depends(get_db)):
@@ -175,10 +171,11 @@ def get_verified_hospitals(db: Session = Depends(get_db)):
 @auth_router.post("/register")
 def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     email_clean = user.email.lower().strip()
-    existing_user = db.query(models.User).filter(models.User.email == email_clean).first()
-    if existing_user:
-        if existing_user.is_email_verified: raise HTTPException(400, "Email already registered")
-        db.delete(existing_user); db.commit()
+    if db.query(models.User).filter(models.User.email == email_clean, models.User.is_email_verified == True).first():
+        raise HTTPException(400, "Email already registered")
+
+    db.query(models.User).filter(models.User.email == email_clean).delete()
+    db.commit()
 
     try:
         otp = generate_otp()
@@ -199,15 +196,10 @@ def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Se
             if not user.hospital_name: raise HTTPException(400, "Hospital required")
             hospital = db.query(models.Hospital).filter(models.Hospital.name == user.hospital_name).first()
             if not hospital: raise HTTPException(400, "Hospital not found")
-            
-            break_time = 0
-            if user.scheduling_config and 'break_duration' in user.scheduling_config:
-                break_time = user.scheduling_config['break_duration'] or 0
-                
             db.add(models.Doctor(
                 user_id=new_user.id, hospital_id=hospital.id, 
                 specialization=user.specialization, license_number=user.license_number,
-                is_verified=False, break_duration=break_time
+                is_verified=False
             ))
         
         db.commit()
@@ -218,11 +210,10 @@ def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Se
 
 @auth_router.post("/verify-otp")
 def verify_otp(data: schemas.VerifyOTP, db: Session = Depends(get_db)):
-    email_clean = data.email.lower().strip()
-    user = db.query(models.User).filter(models.User.email == email_clean).first()
+    user = db.query(models.User).filter(models.User.email == data.email.lower().strip()).first()
     if not user or user.otp_code != data.otp.strip(): raise HTTPException(400, "Invalid OTP")
     user.is_email_verified = True; user.otp_code = None; db.commit()
-    return {"message": "Verified", "status": "active" if user.role == "patient" else "pending_admin", "role": user.role}
+    return {"message": "Verified", "status": "active", "role": user.role}
 
 @auth_router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -241,6 +232,13 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if user.role == "organization":
         h = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
         if h and not h.is_verified: raise HTTPException(403, "Account pending approval")
+    
+    if user.role == "doctor":
+        # Check if doctor record exists
+        d = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
+        # If deleted, d is None. We allow login so they can re-join.
+        # Only if d exists and is NOT verified do we block.
+        if d and not d.is_verified: raise HTTPException(403, "Account pending approval")
         
     return {"access_token": create_access_token({"sub": str(user.id), "role": user.role}), "token_type": "bearer", "role": user.role}
 
@@ -265,11 +263,11 @@ def approve_account(entity_id: int, type: str = Query(...), user: models.User = 
                 hospital.address, hospital.pincode = hospital.pending_address, hospital.pending_pincode
                 hospital.lat, hospital.lng = hospital.pending_lat, hospital.pending_lng
                 hospital.pending_address = None
-            hospital.is_verified = True; db.commit(); return {"message": "Approved"}
+            hospital.is_verified = True; db.commit()
+            return {"message": "Approved"}
     elif type == "doctor":
-        doctor = db.query(models.Doctor).filter(models.Doctor.id == entity_id).first()
-        if doctor:
-            doctor.is_verified = True; db.commit(); return {"message": "Approved"}
+        d = db.query(models.Doctor).filter(models.Doctor.id == entity_id).first()
+        if d: d.is_verified = True; db.commit(); return {"message": "Approved"}
     raise HTTPException(404, "Not found")
 
 @admin_router.post("/reject-account/{entity_id}")
@@ -277,62 +275,198 @@ def reject_account(entity_id: int, type: str = Query(...), user: models.User = D
     if user.role != "admin": raise HTTPException(403, "Admin only")
     if type == "organization":
         h = db.query(models.Hospital).filter(models.Hospital.id == entity_id).first()
-        if h:
-            owner = db.query(models.User).filter(models.User.id == h.owner_id).first()
-            db.delete(h); 
-            if owner: db.delete(owner)
-            db.commit(); return {"message": "Rejected"}
+        if h: 
+            db.delete(h); db.commit()
+            return {"message": "Rejected"}
     elif type == "doctor":
         d = db.query(models.Doctor).filter(models.Doctor.id == entity_id).first()
-        if d:
-            owner = db.query(models.User).filter(models.User.id == d.user_id).first()
-            db.delete(d)
-            if owner: db.delete(owner)
-            db.commit(); return {"message": "Rejected"}
+        if d: 
+            db.delete(d); db.commit()
+            return {"message": "Rejected"}
     raise HTTPException(404, "Not found")
 
-# --- DOCTOR DASHBOARD ROUTE ---
+# --- ORGANIZATION ROUTES ---
+@org_router.get("/details")
+def get_org_details(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "organization": raise HTTPException(403, "Access denied")
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    if not hospital: raise HTTPException(404, "Hospital not found")
+    return hospital
+
+@org_router.post("/location-change")
+def request_location_change(data: schemas.LocationUpdate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "organization": raise HTTPException(403, "Access denied")
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    if not hospital: raise HTTPException(404, "Hospital not found")
+    
+    hospital.pending_address = data.address
+    hospital.pending_pincode = data.pincode
+    hospital.pending_lat = data.lat
+    hospital.pending_lng = data.lng
+    db.commit()
+    return {"message": "Location update requested"}
+
+@org_router.get("/stats")
+def get_org_dashboard_stats(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "organization": raise HTTPException(403, "Access denied")
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    if not hospital: return {"total_doctors": 0, "total_patients": 0, "total_revenue": 0, "utilization_rate": 0, "recent_activity": []}
+
+    doctors = db.query(models.Doctor).filter(models.Doctor.hospital_id == hospital.id).all()
+    doctor_ids = [d.id for d in doctors]
+    
+    appointments = db.query(models.Appointment).filter(models.Appointment.doctor_id.in_(doctor_ids)).all()
+    confirmed = [a for a in appointments if a.status in ["confirmed", "completed"]]
+    
+    return {
+        "total_doctors": len(doctors),
+        "total_patients": db.query(models.Appointment).filter(models.Appointment.doctor_id.in_(doctor_ids)).distinct(models.Appointment.patient_id).count(),
+        "total_revenue": len(confirmed) * 1500,
+        "utilization_rate": 85,
+        "recent_activity": []
+    }
+
+@org_router.get("/doctors")
+def get_org_doctors(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "organization": raise HTTPException(403, "Access denied")
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    if not hospital: return []
+    doctors = db.query(models.Doctor).filter(models.Doctor.hospital_id == hospital.id).all()
+    results = []
+    for d in doctors:
+        results.append({
+            "id": d.id, "full_name": d.user.full_name, "email": d.user.email,
+            "specialization": d.specialization, "license": d.license_number,
+            "status": "Verified" if d.is_verified else "Pending Approval"
+        })
+    return results
+
+@org_router.post("/doctors/{doctor_id}/verify")
+def verify_doctor(doctor_id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "organization": raise HTTPException(403, "Access denied")
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id, models.Doctor.hospital_id == hospital.id).first()
+    if not doctor: raise HTTPException(404, "Doctor not found")
+    doctor.is_verified = True; db.commit()
+    return {"message": "Verified"}
+
+@org_router.delete("/doctors/{doctor_id}")
+def remove_doctor(doctor_id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "organization": raise HTTPException(403, "Access denied")
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id, models.Doctor.hospital_id == hospital.id).first()
+    if not doctor: raise HTTPException(404, "Doctor not found")
+    db.delete(doctor); db.commit()
+    return {"message": "Removed"}
+
+@org_router.get("/appointments")
+def get_all_org_appointments(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "organization": raise HTTPException(403, "Access denied")
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    if not hospital: return []
+    doctors = db.query(models.Doctor).filter(models.Doctor.hospital_id == hospital.id).all()
+    doctor_ids = [d.id for d in doctors]
+    appointments = db.query(models.Appointment).filter(models.Appointment.doctor_id.in_(doctor_ids)).order_by(models.Appointment.start_time.desc()).all()
+    result = []
+    for appt in appointments:
+        doc = db.query(models.Doctor).filter(models.Doctor.id == appt.doctor_id).first()
+        pat = db.query(models.Patient).filter(models.Patient.id == appt.patient_id).first()
+        pat_user = pat.user if pat else None
+        result.append({
+            "id": appt.id,
+            "patient_name": pat_user.full_name if pat_user else "Unknown",
+            "doctor_name": doc.user.full_name if doc else "Unknown",
+            "date": appt.start_time.strftime("%Y-%m-%d"),
+            "time": appt.start_time.strftime("%I:%M %p"),
+            "treatment": appt.treatment_type,
+            "status": appt.status
+        })
+    return result
+
+@org_router.put("/appointments/{appt_id}/cancel")
+def cancel_org_appointment(appt_id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "organization": raise HTTPException(403, "Access denied")
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    if not hospital: raise HTTPException(404, "Hospital not found")
+    appt = db.query(models.Appointment).filter(models.Appointment.id == appt_id).first()
+    if not appt: raise HTTPException(404, "Appointment not found")
+    doctor = db.query(models.Doctor).filter(models.Doctor.id == appt.doctor_id).first()
+    if not doctor or doctor.hospital_id != hospital.id: raise HTTPException(403, "This appointment does not belong to your hospital")
+    appt.status = "cancelled"; db.commit()
+    return {"message": "Appointment cancelled successfully"}
+
+# --- DOCTOR ROUTES (UPDATED) ---
 @doctor_router.get("/dashboard")
 def get_doctor_dashboard(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "doctor": raise HTTPException(403, "Access denied")
     
     doctor = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
+    
+    # 1. CHECK IF ORPHANED (No Profile)
     if not doctor:
-        return {"today_count": 0, "total_patients": 0, "revenue": 0, "appointments": []}
+        return {
+            "account_status": "no_profile",
+            "today_count": 0, "total_patients": 0, "revenue": 0, "appointments": []
+        }
+        
+    # 2. CHECK IF PENDING
+    if not doctor.is_verified:
+        return {
+            "account_status": "pending",
+            "today_count": 0, "total_patients": 0, "revenue": 0, "appointments": []
+        }
 
+    # 3. ACTIVE PROFILE
     now = datetime.now()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = today_start + timedelta(days=1)
-
     todays_appointments = db.query(models.Appointment).filter(
         models.Appointment.doctor_id == doctor.id,
-        models.Appointment.start_time >= today_start,
-        models.Appointment.start_time < today_end
-    ).order_by(models.Appointment.start_time).all()
-
-    total_patients_count = db.query(models.Appointment.patient_id).filter(models.Appointment.doctor_id == doctor.id).distinct().count()
-
+        models.Appointment.start_time >= now.replace(hour=0, minute=0, second=0),
+        models.Appointment.start_time < now.replace(hour=0, minute=0, second=0) + timedelta(days=1)
+    ).all()
+    
     appt_list = []
     revenue = 0
     for appt in todays_appointments:
-        pat_record = db.query(models.Patient).filter(models.Patient.id == appt.patient_id).first()
-        pat_user = db.query(models.User).filter(models.User.id == pat_record.user_id).first() if pat_record else None
-        
+        pat = db.query(models.Patient).filter(models.Patient.id == appt.patient_id).first()
+        pat_user = pat.user if pat else None
         appt_list.append({
             "patient_name": pat_user.full_name if pat_user else "Unknown",
             "treatment": appt.treatment_type,
             "time": appt.start_time.strftime("%I:%M %p"),
             "status": appt.status
         })
-        if appt.status == "completed": revenue += 1500
-        elif appt.status == "confirmed": revenue += 1500
+        if appt.status in ["confirmed", "completed"]: revenue += 1500
 
     return {
+        "account_status": "active",
         "today_count": len(todays_appointments),
-        "total_patients": total_patients_count,
+        "total_patients": db.query(models.Appointment.patient_id).filter(models.Appointment.doctor_id == doctor.id).distinct().count(),
         "revenue": revenue,
         "appointments": appt_list
     }
+
+@doctor_router.post("/join")
+def join_organization(data: schemas.DoctorJoinRequest, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Allows a doctor user to create a new profile linked to a hospital"""
+    if user.role != "doctor": raise HTTPException(403, "Access denied")
+    
+    # Check if already has a profile
+    existing = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
+    if existing: raise HTTPException(400, "You already have a doctor profile.")
+    
+    hospital = db.query(models.Hospital).filter(models.Hospital.id == data.hospital_id).first()
+    if not hospital: raise HTTPException(404, "Hospital not found")
+    
+    new_doc = models.Doctor(
+        user_id=user.id,
+        hospital_id=hospital.id,
+        specialization=data.specialization,
+        license_number=data.license_number,
+        is_verified=False # Must be approved by Org
+    )
+    db.add(new_doc)
+    db.commit()
+    return {"message": "Request sent to hospital"}
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
