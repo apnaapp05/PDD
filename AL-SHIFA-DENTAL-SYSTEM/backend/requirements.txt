@@ -11,3 +11,4 @@ email-validator
 requests
 chromadb
 python-dotenv
+google-generativeai
