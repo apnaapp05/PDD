@@ -2,16 +2,20 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Calendar, Clock, Loader2, RefreshCcw } from "lucide-react";
-import api from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { Plus, Calendar, Clock, Loader2, RefreshCcw, Lock, X } from "lucide-react";
+import { DoctorAPI } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 export default function SchedulePage() {
   const router = useRouter();
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Block Slot State
+  const [showBlockForm, setShowBlockForm] = useState(false);
+  const [blockData, setBlockData] = useState({ date: "", time: "09:00 AM", reason: "Unavailable" });
 
-  // Time slots for the daily view grid
   const timeSlots = ["09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM"];
 
   const fetchSchedule = async () => {
@@ -20,9 +24,7 @@ export default function SchedulePage() {
     if (!token) return router.push("/auth/doctor/login");
 
     try {
-      const response = await api.get("/doctor/schedule", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await DoctorAPI.getSchedule();
       setAppointments(response.data);
     } catch (error) {
       console.error("Failed to load schedule", error);
@@ -35,41 +37,93 @@ export default function SchedulePage() {
     fetchSchedule();
   }, []);
 
-  // Helper to find appointment for a specific time slot
+  const handleBlockSlot = async () => {
+    if (!blockData.date || !blockData.time) {
+      alert("Please select date and time");
+      return;
+    }
+    
+    try {
+      await DoctorAPI.blockSlot(blockData);
+      alert("Slot blocked successfully");
+      setShowBlockForm(false);
+      fetchSchedule(); // Refresh grid
+    } catch (error: any) {
+      alert(error.response?.data?.detail || "Failed to block slot");
+    }
+  };
+
   const getApptForSlot = (time: string) => {
-    // Simple string matching for now (e.g., "10:00 AM" matches "10:00")
-    return appointments.find(a => a.time.includes(time.split(" ")[0])); // simplistic match
+    const todayStr = new Date().toISOString().split('T')[0];
+    return appointments.find(a => a.date === todayStr && a.time === time);
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Weekly Schedule</h1>
         <div className="flex gap-2">
             <Button variant="outline" onClick={fetchSchedule} disabled={loading}>
                 <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
             </Button>
-            <Button variant="doctor">
-            <Plus className="mr-2 h-4 w-4" /> Block Slot
+            
+            {/* FIXED BUTTON: Removed variant="doctor", added specific red styling */}
+            <Button 
+              onClick={() => setShowBlockForm(!showBlockForm)} 
+              className="bg-red-600 hover:bg-red-700 text-white border-0"
+            >
+              {showBlockForm ? <X className="mr-2 h-4 w-4" /> : <Lock className="mr-2 h-4 w-4" />} 
+              {showBlockForm ? "Close" : "Block Slot"}
             </Button>
         </div>
       </div>
+
+      {/* Block Slot Form Overlay */}
+      {showBlockForm && (
+        <Card className="bg-slate-50 border-2 border-red-100 mb-6 animate-in slide-in-from-top-4">
+          <CardContent className="p-4 flex flex-col md:flex-row gap-4 items-end">
+            <div className="w-full md:w-1/3">
+              <label className="text-xs font-bold text-slate-500 mb-1 block">Date</label>
+              <Input type="date" value={blockData.date} onChange={(e) => setBlockData({...blockData, date: e.target.value})} />
+            </div>
+            <div className="w-full md:w-1/3">
+              <label className="text-xs font-bold text-slate-500 mb-1 block">Time</label>
+              <select 
+                className="w-full h-10 rounded-md border border-slate-300 px-3 bg-white text-sm"
+                value={blockData.time}
+                onChange={(e) => setBlockData({...blockData, time: e.target.value})}
+              >
+                {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="w-full md:w-1/3">
+              <label className="text-xs font-bold text-slate-500 mb-1 block">Reason</label>
+              <Input value={blockData.reason} onChange={(e) => setBlockData({...blockData, reason: e.target.value})} placeholder="Meeting, Lunch, etc." />
+            </div>
+            <Button onClick={handleBlockSlot} className="bg-slate-900 hover:bg-slate-800 text-white w-full md:w-auto">
+              Confirm Block
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Today's Agenda */}
         <Card className="lg:col-span-2">
             <CardHeader>
             <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-doctor" /> Today's Timeline
+                <Calendar className="h-5 w-5 text-blue-600" /> Today's Timeline
             </CardTitle>
             </CardHeader>
             <CardContent>
             {loading ? (
-                <div className="py-10 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-doctor"/></div>
+                <div className="py-10 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600"/></div>
             ) : (
                 <div className="space-y-2">
                 {timeSlots.map((time) => {
                     const appt = getApptForSlot(time);
+                    const isBlocked = appt?.status === 'blocked';
+                    
                     return (
                     <div key={time} className="flex border-b border-slate-100 last:border-0 min-h-[4rem] group hover:bg-slate-50 transition-colors">
                         <div className="w-28 border-r border-slate-100 p-4 text-sm text-slate-500 font-mono flex items-center justify-center bg-slate-50/50">
@@ -77,18 +131,31 @@ export default function SchedulePage() {
                         </div>
                         <div className="flex-1 p-2">
                         {appt ? (
-                            <div className="bg-blue-100 border-l-4 border-blue-500 p-2 rounded-r-md text-sm w-full h-full flex flex-col justify-center">
+                            <div className={`border-l-4 p-2 rounded-r-md text-sm w-full h-full flex flex-col justify-center ${
+                                isBlocked 
+                                ? 'bg-slate-100 border-slate-500 text-slate-600' 
+                                : 'bg-blue-100 border-blue-500'
+                            }`}>
                                 <div className="flex justify-between items-center">
-                                    <span className="font-bold text-blue-900">{appt.type}</span>
-                                    <span className="text-[10px] bg-white/60 px-2 py-0.5 rounded text-blue-700 font-bold uppercase">{appt.status}</span>
+                                    <span className={`font-bold ${isBlocked ? 'text-slate-800' : 'text-blue-900'}`}>
+                                      {isBlocked ? '⛔ Slot Blocked' : appt.type}
+                                    </span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                                      isBlocked ? 'bg-slate-200 text-slate-700' : 
+                                      appt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-white/60 text-blue-700'
+                                    }`}>
+                                      {appt.status}
+                                    </span>
                                 </div>
-                                <div className="text-blue-700 text-xs flex items-center gap-1 mt-1">
-                                    <span className="font-medium">{appt.patient_name}</span>
+                                <div className="text-xs flex items-center gap-1 mt-1">
+                                    <span className="font-medium">
+                                      {isBlocked ? `Reason: ${appt.notes}` : appt.patient_name}
+                                    </span>
                                 </div>
                             </div>
                         ) : (
                             <div className="w-full h-full opacity-0 group-hover:opacity-100 flex items-center justify-start pl-4">
-                            <Button variant="ghost" size="sm" className="text-slate-400 hover:text-doctor text-xs">+ Add Appointment</Button>
+                              <span className="text-xs text-green-600 font-medium bg-green-50 px-2 py-1 rounded">Available</span>
                             </div>
                         )}
                         </div>
@@ -107,17 +174,24 @@ export default function SchedulePage() {
             </CardHeader>
             <CardContent>
                 <div className="space-y-4">
-                    {appointments.length === 0 && !loading && <p className="text-slate-500 text-sm">No upcoming appointments.</p>}
-                    {appointments.slice(0, 5).map((appt: any) => (
+                    {appointments.filter(a => new Date(a.date) > new Date()).length === 0 && !loading && (
+                        <p className="text-slate-500 text-sm">No upcoming appointments.</p>
+                    )}
+                    {appointments
+                        .filter(a => new Date(a.date) > new Date()) // Future dates
+                        .slice(0, 5)
+                        .map((appt: any) => (
                         <div key={appt.id} className="flex gap-3 items-start border-b border-slate-100 pb-3 last:border-0">
                             <div className="bg-slate-100 p-2 rounded-lg text-center min-w-[50px]">
                                 <span className="block text-xs text-slate-500 font-bold uppercase">{new Date(appt.date).toLocaleDateString('en-US', { weekday: 'short' })}</span>
                                 <span className="block text-lg font-bold text-slate-800">{new Date(appt.date).getDate()}</span>
                             </div>
                             <div>
-                                <p className="text-sm font-bold text-slate-900">{appt.patient_name}</p>
+                                <p className="text-sm font-bold text-slate-900">
+                                    {appt.status === 'blocked' ? 'Blocked Slot' : appt.patient_name}
+                                </p>
                                 <p className="text-xs text-slate-500">{appt.type}</p>
-                                <div className="flex items-center gap-1 mt-1 text-xs text-doctor font-medium">
+                                <div className="flex items-center gap-1 mt-1 text-xs text-blue-600 font-medium">
                                     <Clock className="h-3 w-3" /> {appt.time}
                                 </div>
                             </div>

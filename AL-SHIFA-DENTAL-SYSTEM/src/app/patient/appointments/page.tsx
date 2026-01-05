@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Calendar, Clock, User, Plus, Bot, Sparkles, CalendarDays } from "lucide-react";
+import { Calendar, Clock, User, Plus, Bot, Sparkles, CalendarDays, XCircle } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { PatientAPI } from "@/lib/api";
@@ -10,19 +10,31 @@ export default function MyAppointmentsPage() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const fetchAppts = async () => {
+    try {
+      const res = await PatientAPI.getMyAppointments();
+      setAppointments(res.data);
+    } catch (error) {
+      console.error("Failed to load appointments", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchAppts = async () => {
-      try {
-        const res = await PatientAPI.getMyAppointments();
-        setAppointments(res.data);
-      } catch (error) {
-        console.error("Failed to load appointments", error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchAppts();
   }, []);
+
+  const handleCancel = async (id: number) => {
+    if (!confirm("Are you sure you want to CANCEL this appointment? This action cannot be undone.")) return;
+    
+    try {
+      await PatientAPI.cancelAppointment(id);
+      fetchAppts(); // Refresh list to show updated status
+    } catch (error: any) {
+      alert(error.response?.data?.detail || "Failed to cancel appointment");
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -93,7 +105,8 @@ export default function MyAppointmentsPage() {
               <Card key={appt.id} className="hover:shadow-md transition-shadow border-slate-200">
                 <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
+                    <div className={`h-12 w-12 rounded-full flex items-center justify-center font-bold 
+                      ${appt.status === 'cancelled' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
                       {appt.doctor.charAt(0)}
                     </div>
                     <div className="space-y-1">
@@ -112,10 +125,18 @@ export default function MyAppointmentsPage() {
                       <Clock className="h-3 w-3 text-slate-400" /> {appt.time}
                     </div>
                     <div className={`px-3 py-1.5 rounded-md text-sm font-bold uppercase tracking-wider ${
-                      appt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                      appt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 
+                      appt.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
                     }`}>
                       {appt.status}
                     </div>
+
+                    {/* CANCEL BUTTON */}
+                    {appt.status !== 'cancelled' && appt.status !== 'completed' && (
+                      <Button onClick={() => handleCancel(appt.id)} size="sm" variant="destructive" className="flex gap-2">
+                        <XCircle className="h-4 w-4" /> Cancel
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

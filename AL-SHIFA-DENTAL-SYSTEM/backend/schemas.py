@@ -26,7 +26,6 @@ class UserOut(BaseModel):
     role: str
     phone_number: Optional[str] = None
     is_email_verified: bool
-
     class Config:
         orm_mode = True
 
@@ -38,7 +37,7 @@ class Login(BaseModel):
     username: str
     password: str
 
-# --- PROFILE UPDATE ---
+# --- PROFILE & ORG ---
 class UserProfileUpdate(BaseModel):
     full_name: str
     email: str
@@ -51,7 +50,6 @@ class LocationUpdate(BaseModel):
     lat: float
     lng: float
 
-# --- DOCTOR JOINING ---
 class DoctorJoinRequest(BaseModel):
     hospital_id: int
     specialization: str
@@ -71,6 +69,37 @@ class AppointmentOut(BaseModel):
     start_time: datetime
     status: str
     treatment_type: str
-
     class Config:
         orm_mode = True
+
+# --- NEW: BLOCK SLOT ---
+class BlockSlotCreate(BaseModel):
+    date: str
+    time: str
+    reason: str
+
+# --- MEDICAL RECORDS ---
+class RecordCreate(BaseModel):
+    diagnosis: str
+    prescription: str
+    notes: Optional[str] = ""
+
+class RecordOut(BaseModel):
+    id: int
+    date: datetime
+    diagnosis: str
+    prescription: str
+    doctor_name: str
+    hospital_name: str
+    class Config:
+        orm_mode = True
+
+# --- INVENTORY ---
+class InventoryItemCreate(BaseModel):
+    name: str
+    quantity: int
+    unit: str
+    threshold: Optional[int] = 10
+
+class InventoryUpdate(BaseModel):
+    quantity: int

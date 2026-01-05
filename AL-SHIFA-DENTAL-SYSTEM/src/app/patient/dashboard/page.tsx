@@ -14,42 +14,44 @@ export default function PatientDashboard() {
   const [userEmail, setUserEmail] = useState("");
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        router.push("/auth/patient/login");
-        return;
-      }
+  // Define fetch function outside useEffect so we can re-use it
+  const fetchDashboardData = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/auth/patient/login");
+      return;
+    }
 
-      try {
-        // Fetch User
-        const userRes = await AuthAPI.getMe();
-        setUserName(userRes.data.full_name);
-        setUserEmail(userRes.data.email);
+    try {
+      // Fetch User
+      const userRes = await AuthAPI.getMe();
+      setUserName(userRes.data.full_name);
+      setUserEmail(userRes.data.email);
 
-        // Fetch Real Appointments
-        const apptRes = await PatientAPI.getMyAppointments();
-        if (apptRes.data && apptRes.data.length > 0) {
-          const latest = apptRes.data[0]; 
-          setAppointment(latest);
-          
-          const apptTime = new Date(`${latest.date} ${latest.time}`).getTime();
-          const now = new Date().getTime();
-          const diff = apptTime - now;
-          if (diff > 0) {
-            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-            setCountdown({ h: hours, m: minutes, s: 0 });
-          }
+      // Fetch Real Appointments
+      const apptRes = await PatientAPI.getMyAppointments();
+      if (apptRes.data && apptRes.data.length > 0) {
+        // Find the first non-cancelled, non-completed appointment if possible, else just the latest
+        const latest = apptRes.data[0]; 
+        setAppointment(latest);
+        
+        const apptTime = new Date(`${latest.date} ${latest.time}`).getTime();
+        const now = new Date().getTime();
+        const diff = apptTime - now;
+        if (diff > 0) {
+          const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+          setCountdown({ h: hours, m: minutes, s: 0 });
         }
-      } catch (error) {
-        console.error("Session Error", error);
-      } finally {
-        setLoading(false);
       }
-    };
+    } catch (error) {
+      console.error("Session Error", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchDashboardData();
   }, [router]);
 
@@ -59,16 +61,29 @@ export default function PatientDashboard() {
     router.push('/auth/role-selection');
   };
 
-  const handleCancel = () => {
-    if (confirm("Cancellation needs to be done by calling the clinic directly in this version.")) {
-      // Future: Call Cancel API
+  // --- NEW: DIRECT CANCELLATION ---
+  const handleCancel = async () => {
+    if (!appointment) return;
+    
+    if (!confirm("Are you sure you want to CANCEL this appointment? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await PatientAPI.cancelAppointment(appointment.id);
+      alert("Appointment has been cancelled.");
+      // Refresh data to update status
+      fetchDashboardData();
+    } catch (error: any) {
+      alert(error.response?.data?.detail || "Failed to cancel appointment");
+      setLoading(false);
     }
   };
 
   const handleNavigate = () => {
     if (!appointment) return;
     
-    // Fallback if coordinates are missing (uses generic search)
     if (!appointment.hospital_lat || !appointment.hospital_lng) {
       if (appointment.hospital_name) {
         const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appointment.hospital_name + " " + appointment.hospital_address)}`;
@@ -79,16 +94,12 @@ export default function PatientDashboard() {
       return;
     }
 
-    // Use Geolocation for route
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition((position) => {
         const { latitude, longitude } = position.coords;
-        // Construct Google Maps Directions URL
         const url = `https://www.google.com/maps/dir/?api=1&origin=${latitude},${longitude}&destination=${appointment.hospital_lat},${appointment.hospital_lng}`;
         window.open(url, '_blank');
       }, (error) => {
-        alert("Unable to retrieve your location. Showing hospital location on map instead.");
-        // Fallback: just open map with destination
          const url = `https://www.google.com/maps/search/?api=1&query=${appointment.hospital_lat},${appointment.hospital_lng}`;
          window.open(url, '_blank');
       });
@@ -134,15 +145,21 @@ export default function PatientDashboard() {
                 <div className="p-10 text-center text-slate-400">Loading your schedule...</div>
             ) : appointment ? (
               <div className="p-0">
-                 <div className="bg-slate-900 px-6 py-4 flex justify-between items-center">
+                 <div className={`px-6 py-4 flex justify-between items-center ${
+                    appointment.status === 'cancelled' ? 'bg-red-900' : 'bg-slate-900'
+                 }`}>
                    <div className="flex items-center gap-2 text-white">
                      <span className="relative flex h-3 w-3">
-                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                       <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                       <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                          appointment.status === 'cancelled' ? 'bg-red-400' : 'bg-green-400'
+                       }`}></span>
+                       <span className={`relative inline-flex rounded-full h-3 w-3 ${
+                          appointment.status === 'cancelled' ? 'bg-red-500' : 'bg-green-500'
+                       }`}></span>
                      </span>
                      <span className="text-sm font-bold tracking-wide uppercase">{appointment.status}</span>
                    </div>
-                   <div className="text-slate-400 text-xs font-mono">ID: #{appointment.id}</div>
+                   <div className="text-white/60 text-xs font-mono">ID: #{appointment.id}</div>
                  </div>
 
                  <div className="p-6">
@@ -165,16 +182,17 @@ export default function PatientDashboard() {
                        </div>
                      </div>
 
-                     <div className="flex flex-col gap-2">
-                       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 min-w-[180px] text-center">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Starts In</p>
-                          <div className="flex justify-center gap-2 text-2xl font-mono font-bold text-slate-800">
-                            <span>{countdown.h}<span className="text-[10px] text-slate-400 align-top ml-0.5">H</span></span>:
-                            <span>{countdown.m}<span className="text-[10px] text-slate-400 align-top ml-0.5">M</span></span>
-                          </div>
-                       </div>
+                     <div className="flex flex-col gap-2 w-full md:w-auto">
+                       {appointment.status !== 'cancelled' && (
+                         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 min-w-[180px] text-center">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Starts In</p>
+                            <div className="flex justify-center gap-2 text-2xl font-mono font-bold text-slate-800">
+                              <span>{countdown.h}<span className="text-[10px] text-slate-400 align-top ml-0.5">H</span></span>:
+                              <span>{countdown.m}<span className="text-[10px] text-slate-400 align-top ml-0.5">M</span></span>
+                            </div>
+                         </div>
+                       )}
                        
-                       {/* NEW NAVIGATION BUTTON */}
                        <Button onClick={handleNavigate} className="w-full bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold rounded-xl flex items-center justify-center gap-2">
                           <MapPin className="h-4 w-4" /> Get Directions
                        </Button>
@@ -182,14 +200,22 @@ export default function PatientDashboard() {
                    </div>
 
                    <div className="flex gap-3 mt-6 pt-6 border-t border-slate-100">
-                      <Link href="/patient/appointments/new" className="flex-1">
-                         <Button variant="outline" className="w-full h-12 rounded-xl border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-600 hover:bg-blue-50 font-bold transition-all">
-                            <CalendarDays className="mr-2 h-4 w-4"/> Reschedule
-                         </Button>
-                      </Link>
-                      <Button onClick={handleCancel} variant="ghost" className="h-12 rounded-xl text-red-500 hover:bg-red-50 hover:text-red-600 font-bold transition-all px-6">
-                         <XCircle className="mr-2 h-4 w-4"/> Cancel
-                      </Button>
+                      {appointment.status !== 'cancelled' && appointment.status !== 'completed' ? (
+                        <>
+                          <Link href="/patient/appointments/new" className="flex-1">
+                             <Button variant="outline" className="w-full h-12 rounded-xl border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-600 hover:bg-blue-50 font-bold transition-all">
+                                <CalendarDays className="mr-2 h-4 w-4"/> Reschedule
+                             </Button>
+                          </Link>
+                          <Button onClick={handleCancel} variant="ghost" className="h-12 rounded-xl text-red-500 hover:bg-red-50 hover:text-red-600 font-bold transition-all px-6">
+                             <XCircle className="mr-2 h-4 w-4"/> Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <div className="w-full text-center text-slate-400 text-sm italic">
+                          This appointment is {appointment.status}. <Link href="/patient/appointments/new" className="text-blue-600 underline">Book a new one?</Link>
+                        </div>
+                      )}
                    </div>
                  </div>
               </div>

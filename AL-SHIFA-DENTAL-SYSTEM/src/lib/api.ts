@@ -48,9 +48,26 @@ export const OrganizationAPI = {
 
 export const DoctorAPI = {
   getDashboardStats: async () => api.get("/doctor/dashboard"),
-  // NEW: Join Organization
   joinOrganization: async (data: { hospital_id: number; specialization: string; license_number: string }) =>
     api.post("/doctor/join", data),
+  
+  getPatientDetails: async (id: number) => api.get(`/doctor/patients/${id}`),
+  addMedicalRecord: async (id: number, data: { diagnosis: string; prescription: string; notes: string }) =>
+    api.post(`/doctor/patients/${id}/records`, data),
+    
+  // INVENTORY
+  getInventory: async () => api.get("/doctor/inventory"),
+  addInventoryItem: async (data: { name: string; quantity: number; unit: string; threshold: number }) => 
+    api.post("/doctor/inventory", data),
+  updateStock: async (id: number, quantity: number) => api.put(`/doctor/inventory/${id}`, { quantity }),
+  uploadInventory: async (formData: FormData) => 
+    api.post("/doctor/inventory/upload", formData, { headers: { "Content-Type": "multipart/form-data" } }),
+
+  // SCHEDULE
+  getSchedule: async () => api.get("/doctor/schedule"),
+  blockSlot: async (data: { date: string; time: string; reason: string }) => 
+    api.post("/doctor/schedule/block", data),
+
   getAiInsights: async () => Promise.resolve({ data: [] }), 
 };
 
@@ -59,6 +76,8 @@ export const PatientAPI = {
   bookAppointment: async (data: { doctor_id: number; date: string; time: string; reason: string }) => 
     api.post("/appointments", data),
   getMyAppointments: async () => api.get("/patient/appointments"),
+  cancelAppointment: async (id: number) => api.put(`/patient/appointments/${id}/cancel`),
+  getMyRecords: async () => api.get("/patient/records"),
 };
 
 export default api;

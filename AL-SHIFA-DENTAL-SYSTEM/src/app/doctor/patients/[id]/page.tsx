@@ -1,99 +1,155 @@
-import { Button } from "@/components/ui/button";
+"use client";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { DoctorAPI } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, Activity, Syringe, Clock, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea"; // Assuming you have this, or use standard textarea
+import { Loader2, ArrowLeft, User, History, Save } from "lucide-react";
 
-export default function PatientDetail({ params }: { params: { id: string } }) {
+export default function PatientTreatmentPage() {
+  const params = useParams();
+  const router = useRouter();
+  const id = parseInt(params.id as string);
+
+  const [loading, setLoading] = useState(true);
+  const [patient, setPatient] = useState<any>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Form
+  const [form, setForm] = useState({
+    diagnosis: "",
+    prescription: "",
+    notes: ""
+  });
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const res = await DoctorAPI.getPatientDetails(id);
+        setPatient(res.data);
+      } catch (error) {
+        alert("Failed to load patient details");
+        router.back();
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [id, router]);
+
+  const handleSubmit = async () => {
+    if (!form.diagnosis || !form.prescription) {
+      alert("Please enter a Diagnosis and Prescription");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await DoctorAPI.addMedicalRecord(id, form);
+      alert("Record Saved Successfully!");
+      router.push("/doctor/dashboard");
+    } catch (error) {
+      alert("Failed to save record");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) return <div className="p-10 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-blue-600" /></div>;
+
   return (
-    <div className="space-y-6">
-      
-      {/* Patient Header Card */}
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex justify-between items-start">
-        <div className="flex gap-4">
-          <div className="h-16 w-16 rounded-full bg-slate-200 flex items-center justify-center text-2xl font-bold text-slate-500">
-            AK
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Ali Khan</h1>
-            <p className="text-sm text-slate-500">Male, 34 Years • MRN: #89201</p>
-            <div className="flex gap-2 mt-2">
-              <span className="bg-red-50 text-red-600 text-xs px-2 py-1 rounded border border-red-100 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" /> Allergy: Penicillin
-              </span>
-              <span className="bg-blue-50 text-blue-600 text-xs px-2 py-1 rounded border border-blue-100">
-                Diabetic
-              </span>
-            </div>
-          </div>
+    <div className="space-y-6 max-w-5xl mx-auto pb-20">
+      <button onClick={() => router.back()} className="text-sm text-slate-500 hover:text-slate-800 flex items-center gap-1">
+        <ArrowLeft className="h-4 w-4" /> Back to Dashboard
+      </button>
+
+      {/* Patient Header */}
+      <div className="flex items-center gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+        <div className="h-16 w-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-2xl">
+          {patient.full_name.charAt(0)}
         </div>
-        <div className="flex gap-2">
-           <Button variant="outline">Edit Profile</Button>
-           <Button variant="doctor">Start Session</Button>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">{patient.full_name}</h1>
+          <div className="flex gap-4 text-sm text-slate-500 mt-1">
+            <span>Age: {patient.age}</span>
+            <span>Gender: {patient.gender}</span>
+            <span>ID: #{patient.id}</span>
+          </div>
         </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
+      <div className="grid md:grid-cols-2 gap-6">
         
-        {/* Left: Medical Timeline (Storytelling UI) */}
-        <Card className="md:col-span-2">
+        {/* LEFT: New Consultation */}
+        <Card className="border-t-4 border-t-blue-600">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-doctor" /> Clinical History
-            </CardTitle>
+            <CardTitle>Current Consultation</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="relative border-l-2 border-slate-200 ml-3 space-y-8 pl-8 py-2">
-              
-              {/* Timeline Item 1 */}
-              <div className="relative">
-                <span className="absolute -left-[41px] top-1 h-5 w-5 rounded-full bg-green-500 border-4 border-white shadow-sm"></span>
-                <div className="flex justify-between items-center mb-1">
-                  <h3 className="font-bold text-slate-900">Root Canal Treatment (Completed)</h3>
-                  <span className="text-xs text-slate-400">12 Dec 2024</span>
-                </div>
-                <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  Patient reported subsided pain. Filled canals with Gutta-percha. Prescribed Ibuprofen 400mg.
-                </p>
-              </div>
-
-              {/* Timeline Item 2 */}
-              <div className="relative">
-                <span className="absolute -left-[41px] top-1 h-5 w-5 rounded-full bg-slate-300 border-4 border-white"></span>
-                <div className="flex justify-between items-center mb-1">
-                  <h3 className="font-bold text-slate-900">Initial Consultation</h3>
-                  <span className="text-xs text-slate-400">01 Dec 2024</span>
-                </div>
-                <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  Complained of sensitivity in upper right molar. X-Ray revealed deep decay. Scheduled RCT.
-                </p>
-                <div className="mt-2 flex gap-2">
-                   {/* Mock X-Ray Thumbnail */}
-                   <div className="h-16 w-16 bg-black rounded flex items-center justify-center text-xs text-slate-400">X-RAY</div>
-                </div>
-              </div>
-
+          <CardContent className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Diagnosis</label>
+              <Input 
+                placeholder="e.g. Dental Caries" 
+                value={form.diagnosis}
+                onChange={(e) => setForm({...form, diagnosis: e.target.value})}
+              />
             </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Prescription (Rx)</label>
+              <textarea 
+                className="w-full min-h-[120px] rounded-md border border-slate-300 p-3 text-sm focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. Amoxicillin 500mg - 1 tab x 3 times/day"
+                value={form.prescription}
+                onChange={(e) => setForm({...form, prescription: e.target.value})}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Private Notes (Optional)</label>
+              <textarea 
+                className="w-full min-h-[80px] rounded-md border border-slate-300 p-3 text-sm focus:ring-2 focus:ring-slate-500"
+                placeholder="Internal notes..."
+                value={form.notes}
+                onChange={(e) => setForm({...form, notes: e.target.value})}
+              />
+            </div>
+
+            <Button onClick={handleSubmit} disabled={submitting} className="w-full bg-blue-600 hover:bg-blue-700">
+              {submitting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save & Complete Visit
+            </Button>
           </CardContent>
         </Card>
 
-        {/* Right: Actions & Procedures */}
-        <div className="space-y-6">
-          <Card>
-             <CardHeader>
-               <CardTitle className="text-sm">Quick Procedures</CardTitle>
-             </CardHeader>
-             <CardContent className="space-y-2">
-               <Button variant="outline" className="w-full justify-start">
-                 <Syringe className="mr-2 h-4 w-4 text-slate-400" /> Anesthesia (Lidocaine)
-               </Button>
-               <Button variant="outline" className="w-full justify-start">
-                 <FileText className="mr-2 h-4 w-4 text-slate-400" /> Generate Prescription
-               </Button>
-               <Button variant="outline" className="w-full justify-start">
-                 <Clock className="mr-2 h-4 w-4 text-slate-400" /> Book Follow-up
-               </Button>
-             </CardContent>
-          </Card>
-        </div>
+        {/* RIGHT: History */}
+        <Card className="bg-slate-50 border-slate-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-slate-700">
+              <History className="h-5 w-5" /> Medical History
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {patient.history.length === 0 ? (
+              <p className="text-slate-500 text-sm italic">No previous records found.</p>
+            ) : (
+              <div className="space-y-4">
+                {patient.history.map((rec: any) => (
+                  <div key={rec.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm text-sm">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="font-bold text-slate-900">{rec.date}</span>
+                      <span className="text-xs text-slate-500">Dr. {rec.doctor_name}</span>
+                    </div>
+                    <p className="text-slate-700 mb-1"><strong>Dx:</strong> {rec.diagnosis}</p>
+                    <p className="text-slate-600 font-mono text-xs bg-slate-50 p-2 rounded">{rec.prescription}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
       </div>
     </div>
   );

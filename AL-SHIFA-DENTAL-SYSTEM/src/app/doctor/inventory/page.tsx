@@ -1,28 +1,24 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, CheckCircle, PackagePlus, Loader2, RefreshCcw } from "lucide-react";
-import api from "@/lib/api";
-import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Plus, Package, AlertTriangle, MinusCircle, PlusCircle, Upload, FileSpreadsheet } from "lucide-react";
+import { DoctorAPI } from "@/lib/api";
 
 export default function InventoryPage() {
-  const router = useRouter();
-  const [inventory, setInventory] = useState<any[]>([]);
+  const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [newItem, setNewItem] = useState({ name: "", quantity: "", unit: "pcs", threshold: "10" });
+  const [showAdd, setShowAdd] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchInventory = async () => {
-    setLoading(true);
-    const token = localStorage.getItem("token");
-    if (!token) return router.push("/auth/doctor/login");
-
     try {
-      const response = await api.get("/doctor/inventory", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setInventory(response.data);
+      const res = await DoctorAPI.getInventory();
+      setItems(res.data);
     } catch (error) {
-      console.error("Failed to load inventory", error);
+      console.error("Failed to load inventory");
     } finally {
       setLoading(false);
     }
@@ -32,95 +28,150 @@ export default function InventoryPage() {
     fetchInventory();
   }, []);
 
-  // Calculate Stats
-  const criticalCount = inventory.filter(i => i.status === "Critical").length;
-  const goodCount = inventory.filter(i => i.status === "Good").length;
+  const handleAddItem = async () => {
+    if (!newItem.name || !newItem.quantity) return alert("Please fill details");
+    try {
+      await DoctorAPI.addInventoryItem({
+        name: newItem.name,
+        quantity: parseInt(newItem.quantity),
+        unit: newItem.unit,
+        threshold: parseInt(newItem.threshold)
+      });
+      setNewItem({ name: "", quantity: "", unit: "pcs", threshold: "10" });
+      setShowAdd(false);
+      fetchInventory();
+    } catch (error) {
+      alert("Failed to add item");
+    }
+  };
+
+  const handleStockUpdate = async (id: number, change: number) => {
+    try {
+      await DoctorAPI.updateStock(id, change);
+      fetchInventory(); // Refresh to show new quantity
+    } catch (error) {
+      alert("Update failed");
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      setLoading(true);
+      await DoctorAPI.uploadInventory(formData);
+      alert("Inventory Uploaded Successfully!");
+      fetchInventory();
+    } catch (error) {
+      alert("Failed to upload file. Please ensure it is a valid CSV.");
+    } finally {
+      setLoading(false);
+      if(fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-slate-900">Inventory Management</h1>
+      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Inventory & Supplies</h1>
+          <p className="text-sm text-slate-500">Track consumption and low stock alerts</p>
+        </div>
+        
         <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchInventory} disabled={loading}>
-            <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          {/* Upload Button */}
+          <input 
+            type="file" 
+            accept=".csv" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            className="hidden" 
+          />
+          <Button onClick={() => fileInputRef.current?.click()} variant="outline" className="border-green-600 text-green-700 hover:bg-green-50">
+            <Upload className="h-4 w-4 mr-2" /> Upload Sheet
           </Button>
-          <Button variant="doctor">
-            <PackagePlus className="mr-2 h-4 w-4" /> Add Stock
+
+          <Button onClick={() => setShowAdd(!showAdd)} className="bg-blue-600 hover:bg-blue-700">
+            <Plus className="h-4 w-4 mr-2" /> Add Item
           </Button>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid md:grid-cols-3 gap-4">
-        <Card className="bg-red-50 border-red-100">
-           <CardContent className="pt-6 flex items-center gap-4">
-             <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center text-red-600">
-               <AlertTriangle className="h-6 w-6" />
-             </div>
-             <div>
-               <p className="text-2xl font-bold text-red-700">{criticalCount} Items</p>
-               <p className="text-xs text-red-600">Critical Stock Level</p>
-             </div>
-           </CardContent>
+      {/* Manual Add Form */}
+      {showAdd && (
+        <Card className="bg-slate-50 border-slate-200">
+          <CardContent className="p-4 flex flex-col md:flex-row gap-4 items-end">
+            <div className="flex-1 w-full">
+              <label className="text-xs font-bold text-slate-500">Item Name</label>
+              <Input value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} placeholder="e.g. Lidocaine" />
+            </div>
+            <div className="w-full md:w-24">
+              <label className="text-xs font-bold text-slate-500">Qty</label>
+              <Input type="number" value={newItem.quantity} onChange={(e) => setNewItem({...newItem, quantity: e.target.value})} />
+            </div>
+            <div className="w-full md:w-24">
+              <label className="text-xs font-bold text-slate-500">Unit</label>
+              <Input value={newItem.unit} onChange={(e) => setNewItem({...newItem, unit: e.target.value})} />
+            </div>
+            <Button onClick={handleAddItem} className="w-full md:w-auto">Save</Button>
+          </CardContent>
         </Card>
-        <Card className="bg-green-50 border-green-100">
-           <CardContent className="pt-6 flex items-center gap-4">
-             <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center text-green-600">
-                <CheckCircle className="h-6 w-6" />
-             </div>
-             <div>
-               <p className="text-2xl font-bold text-green-700">{goodCount} Items</p>
-               <p className="text-xs text-green-600">Healthy Stock</p>
-             </div>
-           </CardContent>
-        </Card>
-      </div>
+      )}
 
-      {/* Real Data Table */}
-      <Card>
-        <CardHeader><CardTitle>Stock List (Live from Agent Memory)</CardTitle></CardHeader>
-        <CardContent>
-          {loading && inventory.length === 0 ? (
-            <div className="text-center py-10"><Loader2 className="h-8 w-8 animate-spin mx-auto text-doctor"/></div>
-          ) : (
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="p-3">Item Name</th>
-                  <th className="p-3">Supplier</th>
-                  <th className="p-3">Stock / Reorder</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {inventory.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-3 font-medium">{item.name}</td>
-                    <td className="p-3 text-slate-500">{item.supplier}</td>
-                    <td className="p-3">
-                      <span className="font-bold">{item.stock}</span> <span className="text-slate-400">/ {item.reorder_level}</span>
-                    </td>
-                    <td className="p-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                        item.status === 'Critical' ? 'bg-red-100 text-red-700' :
-                        item.status === 'Low' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
-                      }`}>
-                        {item.status}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <Button variant="ghost" size="sm" className="text-doctor hover:text-doctor-dark hover:bg-blue-50">
-                        Update
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
+      {/* Low Stock Alerts */}
+      {items.some(i => i.quantity <= i.threshold) && (
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r shadow-sm flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5 text-red-600" />
+          <div>
+            <h3 className="text-sm font-bold text-red-800">Low Stock Alert</h3>
+            <p className="text-xs text-red-600">
+              {items.filter(i => i.quantity <= i.threshold).map(i => i.name).join(", ")} are running low.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Inventory List */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {items.map((item) => (
+          <Card key={item.id} className="hover:shadow-md transition-shadow">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base font-bold text-slate-800">{item.name}</CardTitle>
+              <Package className="h-4 w-4 text-slate-400" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end justify-between">
+                <div>
+                  <div className={`text-2xl font-bold ${item.quantity <= item.threshold ? 'text-red-600' : 'text-slate-900'}`}>
+                    {item.quantity}
+                  </div>
+                  <p className="text-xs text-slate-500">{item.unit} available</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => handleStockUpdate(item.id, -1)}
+                    className="h-8 w-8 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
+                    title="Use 1"
+                  >
+                    <MinusCircle className="h-5 w-5" />
+                  </button>
+                  <button 
+                    onClick={() => handleStockUpdate(item.id, 1)}
+                    className="h-8 w-8 flex items-center justify-center rounded-full bg-green-100 text-green-600 hover:bg-green-200 transition-colors"
+                    title="Restock 1"
+                  >
+                    <PlusCircle className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

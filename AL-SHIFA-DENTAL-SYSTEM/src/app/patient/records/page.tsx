@@ -1,39 +1,82 @@
 "use client";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft, FileText, Download, Calendar } from "lucide-react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { FileText, Calendar, User, Stethoscope } from "lucide-react";
+import { PatientAPI } from "@/lib/api";
 
-export default function PatientRecords() {
-  const records = [
-    { id: 1, type: "Prescription", date: "12 Dec 2024", doctor: "Dr. Sarah Ahmed", desc: "Amoxicillin 500mg, Ibuprofen", file: "RX-2024-001.pdf" },
-    { id: 2, type: "X-Ray Report", date: "01 Dec 2024", doctor: "Dr. Bilal Karim", desc: "Lower Molar Root Canal Analysis", file: "XRAY-89.jpg" },
-  ];
+export default function MedicalRecordsPage() {
+  const [records, setRecords] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchRecords = async () => {
+      try {
+        const res = await PatientAPI.getMyRecords();
+        setRecords(res.data);
+      } catch (error) {
+        console.error("Failed to load records", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRecords();
+  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="flex items-center gap-4 mb-8">
-        <Link href="/patient/dashboard"><Button variant="ghost" size="icon" className="rounded-full bg-white shadow-sm"><ArrowLeft className="h-5 w-5" /></Button></Link>
-        <h1 className="text-xl font-bold text-slate-900">Medical Records</h1>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Medical Records</h1>
+        <p className="text-sm text-slate-500">Your history of diagnoses and prescriptions</p>
       </div>
 
-      <div className="space-y-6">
-        {records.map((rec) => (
-          <div key={rec.id} className="relative pl-8 border-l-2 border-slate-200 last:border-0 pb-8">
-            <div className="absolute -left-[9px] top-0 h-4 w-4 rounded-full bg-patient border-2 border-white shadow-sm"></div>
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-              <div className="flex justify-between items-start mb-2">
-                <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide">{rec.type}</span>
-                <span className="text-xs text-slate-400 flex items-center gap-1"><Calendar className="h-3 w-3" /> {rec.date}</span>
+      {loading ? (
+        <div className="p-10 text-center text-slate-500">Loading records...</div>
+      ) : records.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center p-12 space-y-4">
+             <div className="h-16 w-16 bg-slate-50 rounded-full flex items-center justify-center">
+               <FileText className="h-8 w-8 text-slate-300" />
+             </div>
+             <p className="text-slate-500">No medical records found.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {records.map((rec) => (
+            <Card key={rec.id} className="overflow-hidden border border-slate-200">
+              <div className="bg-slate-50 p-3 border-b border-slate-100 flex justify-between items-center">
+                <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                  <Calendar className="h-4 w-4 text-slate-400" />
+                  {new Date(rec.date).toLocaleDateString()}
+                </div>
+                <div className="text-xs text-slate-500">
+                  Dr. {rec.doctor_name} • {rec.hospital_name}
+                </div>
               </div>
-              <h3 className="font-bold text-slate-900">{rec.desc}</h3>
-              <p className="text-xs text-slate-500 mt-1">Prescribed by {rec.doctor}</p>
-              <Button variant="outline" size="sm" className="w-full mt-4 text-slate-600 border-slate-200 hover:bg-slate-50">
-                <Download className="mr-2 h-4 w-4" /> Download {rec.file.split('.').pop()?.toUpperCase()}
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
+              <CardContent className="p-4 space-y-4">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Diagnosis</h4>
+                  <p className="text-slate-800 font-medium">{rec.diagnosis}</p>
+                </div>
+                
+                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                  <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Stethoscope className="h-3 w-3" /> Prescription
+                  </h4>
+                  <p className="text-sm text-blue-900 font-mono whitespace-pre-wrap">{rec.prescription}</p>
+                </div>
+
+                {rec.notes && (
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Notes</h4>
+                    <p className="text-xs text-slate-600">{rec.notes}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
