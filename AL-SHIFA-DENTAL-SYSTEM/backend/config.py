@@ -1,4 +1,3 @@
-# backend/config.py
 import os
 
 # Security
@@ -6,12 +5,13 @@ SECRET_KEY = "alshifa_super_secret_key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
 
-# Database
-DATABASE_URL = "sqlite:///./dental_clinic.db"
+# Database Configuration (PostgreSQL)
+# Format: postgresql://username:password@localhost:port/database_name
+DATABASE_URL = "postgresql://postgres:ADLAB@127.0.0.1:5432/alshifa_db"
 
 # AI Configuration
 # PASTE YOUR GEMINI API KEY BELOW inside the quotes
-GEMINI_API_KEY = "jdfbfd" 
+GEMINI_API_KEY = "AIzaSyAccxVtjqPgbMoTYr6l-oplruKAUalcMKo" 
 
 # Agent Settings
 MAX_AGENT_STEPS = 5

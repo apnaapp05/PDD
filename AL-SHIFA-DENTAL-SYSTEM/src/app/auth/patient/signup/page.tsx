@@ -1,140 +1,171 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Mail, Loader2, AlertCircle, Smile, CheckCircle2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, User, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { AuthAPI } from "@/lib/api";
 
 export default function PatientSignup() {
-  const [step, setStep] = useState<"form" | "otp" | "success">("form");
-  const [otp, setOtp] = useState("");
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
+  
   const [formData, setFormData] = useState({
-    fullName: "",
+    name: "",
     email: "",
     password: "",
+    confirmPassword: "",
     age: "",
-    gender: "Male"
+    gender: "",
   });
 
-  const handleChange = (e: any) => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
 
+    // Basic Validation
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (!formData.age || !formData.gender) {
+      setError("Please select age and gender");
+      return;
+    }
+
+    setLoading(true);
+
     try {
+      // 1. Register API Call
       await AuthAPI.register({
         email: formData.email,
         password: formData.password,
-        full_name: formData.fullName,
+        full_name: formData.name,
         role: "patient",
+        // Specific fields for Patient Profile
         age: parseInt(formData.age),
         gender: formData.gender
       });
-      setStep("otp");
+
+      // 2. Success: Save email for the OTP page
+      localStorage.setItem("pending_email", formData.email);
+      
+      // 3. Redirect to the Global OTP Page
+      router.push("/auth/verify-otp");
+
     } catch (err: any) {
       console.error(err);
-      setError("Registration failed. Email might be taken.");
+      const detail = err.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
   };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      await AuthAPI.verifyOtp(formData.email, otp);
-      setStep("success");
-    } catch (err) {
-      setError("Invalid OTP.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (step === "otp") {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
-          <div className="flex justify-center mb-4">
-            <div className="h-16 w-16 bg-teal-100 rounded-full flex items-center justify-center">
-              <Mail className="h-8 w-8 text-teal-600" />
-            </div>
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900">Verify Email</h2>
-          <p className="text-slate-600 mb-6 text-sm mt-2">Enter code sent to {formData.email}</p>
-          {error && <div className="mb-4 text-red-600 text-sm">{error}</div>}
-          <form onSubmit={handleVerifyOtp} className="space-y-4">
-            <Input className="text-center text-2xl h-14" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value)} />
-            <Button className="w-full bg-teal-600 hover:bg-teal-700 text-white" disabled={loading}>
-              {loading ? <Loader2 className="animate-spin h-4 w-4"/> : "Verify & Activate"}
-            </Button>
-          </form>
-          <div className="mt-6 text-xs text-slate-400">Tip: Check backend terminal for OTP</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (step === "success") {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
-          <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-slate-900">Welcome to Al-Shifa!</h2>
-          <p className="text-slate-600 mb-6 mt-2">Your account is fully active. You can now book appointments.</p>
-          <Link href="/auth/patient/login">
-            <Button className="w-full bg-teal-600 hover:bg-teal-700">Login Now</Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-8 border-t-4 border-teal-500">
-        <div className="text-center mb-8">
-           <Smile className="h-10 w-10 text-teal-600 mx-auto mb-2" />
-           <h2 className="text-2xl font-bold text-slate-900">Patient Registration</h2>
-        </div>
-
-        {error && <div className="mb-4 p-2 bg-red-50 text-red-600 text-sm rounded">{error}</div>}
-
-        <form className="space-y-4" onSubmit={handleRegister}>
-          <Input label="Full Name" name="fullName" onChange={handleChange} required />
-          <Input label="Email" type="email" name="email" onChange={handleChange} required />
-          <Input label="Password" type="password" name="password" onChange={handleChange} required />
-          
-          <div className="grid grid-cols-2 gap-4">
-             <Input label="Age" type="number" name="age" onChange={handleChange} required />
-             <div className="space-y-1">
-               <label className="text-sm font-medium text-slate-700">Gender</label>
-               <select name="gender" onChange={handleChange} className="w-full p-2 border rounded-md bg-white text-sm">
-                 <option value="Male">Male</option>
-                 <option value="Female">Female</option>
-               </select>
-             </div>
+      <Card className="w-full max-w-lg shadow-lg border-slate-200">
+        <CardHeader className="text-center">
+          <div className="mx-auto h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+            <User className="h-6 w-6 text-blue-600" />
           </div>
+          <CardTitle className="text-2xl font-bold text-slate-900">Patient Registration</CardTitle>
+          <CardDescription>Create an account to book appointments</CardDescription>
+        </CardHeader>
+        <CardContent>
+          
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-md flex items-center gap-2 border border-red-100">
+              <AlertCircle className="h-4 w-4" /> {error}
+            </div>
+          )}
 
-          <Button className="w-full bg-teal-600 hover:bg-teal-700 text-white" size="lg" disabled={loading}>
-            {loading ? <Loader2 className="animate-spin h-5 w-5"/> : "Create Account"}
-          </Button>
-        </form>
-        <p className="mt-6 text-center text-xs text-slate-500">
-           Existing patient? <Link href="/auth/patient/login" className="text-teal-600 font-bold">Login</Link>
-        </p>
-      </div>
+          <form onSubmit={handleSignup} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Full Name</Label>
+              <Input 
+                id="name" 
+                placeholder="John Doe" 
+                required 
+                onChange={(e) => setFormData({...formData, name: e.target.value})} 
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
+              <Input 
+                id="email" 
+                type="email" 
+                placeholder="patient@example.com" 
+                required 
+                onChange={(e) => setFormData({...formData, email: e.target.value})} 
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="age">Age</Label>
+                <Input 
+                  id="age" 
+                  type="number" 
+                  placeholder="25" 
+                  required 
+                  min="1"
+                  onChange={(e) => setFormData({...formData, age: e.target.value})} 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Gender</Label>
+                <Select onValueChange={(val) => setFormData({...formData, gender: val})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Male">Male</SelectItem>
+                    <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input 
+                  id="password" 
+                  type="password" 
+                  required 
+                  onChange={(e) => setFormData({...formData, password: e.target.value})} 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm">Confirm Password</Label>
+                <Input 
+                  id="confirm" 
+                  type="password" 
+                  required 
+                  onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})} 
+                />
+              </div>
+            </div>
+
+            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 mt-2" disabled={loading}>
+              {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : "Create Account"}
+            </Button>
+          </form>
+
+          <p className="mt-6 text-center text-xs text-slate-500">
+            Already have an account? <Link href="/auth/patient/login" className="text-blue-600 font-bold hover:underline">Sign in</Link>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

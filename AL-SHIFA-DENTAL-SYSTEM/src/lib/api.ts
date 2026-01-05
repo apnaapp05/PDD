@@ -24,10 +24,13 @@ export const AuthAPI = {
     return api.post("/auth/login", params, { headers: { "Content-Type": "application/x-www-form-urlencoded" } });
   },
   register: async (userData) => api.post("/auth/register", { ...userData, email: userData.email.toLowerCase().trim() }),
-  verifyOtp: async (email: string, otp: string) => api.post("/auth/verify-otp", { 
-    email: email.toLowerCase().trim(), 
-    otp: otp.trim() 
+  
+  // FIXED: Changed to accept an object { email, otp } to match how you call it
+  verifyOtp: async (data: { email: string; otp: string }) => api.post("/auth/verify-otp", { 
+    email: data.email.toLowerCase().trim(), 
+    otp: data.otp.trim() 
   }),
+
   getMe: async () => api.get("/auth/me"),
   updateProfile: async (data: { full_name: string; email: string; phone_number: string; address?: string }) => 
     api.put("/auth/profile", data),
@@ -63,7 +66,6 @@ export const DoctorAPI = {
     api.post("/doctor/inventory/upload", formData, { headers: { "Content-Type": "multipart/form-data" } }),
 
   getSchedule: async () => api.get("/doctor/schedule"),
-  // UPDATED
   blockSlot: async (data: { date: string; time?: string; reason: string; is_whole_day: boolean }) => 
     api.post("/doctor/schedule/block", data),
 

@@ -1,13 +1,11 @@
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
+from config import DATABASE_URL
 
-# Database URL (Default PostgreSQL format)
-# Format: postgresql://user:password@localhost/dbname
-# Make sure '127.0.0.1:5432' is here
-SQLALCHEMY_DATABASE_URL = "postgresql://postgres:ADLAB@127.0.0.1:5432/alshifa_db"
+# Create the engine using the configuration
+# We removed "check_same_thread" as it is only for SQLite
+engine = create_engine(DATABASE_URL)
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

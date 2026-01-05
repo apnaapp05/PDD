@@ -31,6 +31,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# Ensure tables exist (Safe to run multiple times)
 models.Base.metadata.create_all(bind=database.engine)
 email_service = EmailAdapter()
 
@@ -231,71 +232,76 @@ def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Se
     if existing_verified:
         raise HTTPException(400, "Email already registered")
 
-    # 3. CLEAN SLATE: Delete ALL unverified accounts with this email
-    # This prevents duplicate/stale rows causing the "Invalid OTP" issue
-    stale_users = db.query(models.User).filter(
+    # 3. IDEMPOTENCY CHECK (Fixes Race Condition)
+    # Check if an UNVERIFIED account exists
+    existing_unverified = db.query(models.User).filter(
         models.User.email == email_clean,
         models.User.is_email_verified == False
-    ).all()
-    
-    if stale_users:
-        logger.info(f"Cleaning up {len(stale_users)} stale unverified accounts for {email_clean}")
-        for stale in stale_users:
-            # Delete dependent records first to avoid Foreign Key errors
-            db.query(models.Hospital).filter(models.Hospital.owner_id == stale.id).delete()
-            db.query(models.Doctor).filter(models.Doctor.user_id == stale.id).delete()
-            db.query(models.Patient).filter(models.Patient.user_id == stale.id).delete()
-            db.delete(stale)
-        db.commit() # Commit deletion
+    ).first()
 
     try:
-        # 4. Generate Credentials
         otp = generate_otp()
-        hashed_pw = get_password_hash(user.password)
         expires_at = datetime.utcnow() + timedelta(minutes=10)
 
-        # 5. Create NEW User
-        new_user = models.User(
-            email=email_clean, 
-            password_hash=hashed_pw, 
-            full_name=user.full_name,
-            role=user.role, 
-            is_email_verified=False, 
-            otp_code=otp,
-            otp_expires_at=expires_at
-        )
-        
-        db.add(new_user)
-        db.flush() # Get ID
+        if existing_unverified:
+            # If the existing OTP is still valid (created recently), reuse it.
+            # This handles double-clicks by sending the SAME OTP that is already in the DB.
+            if existing_unverified.otp_expires_at and existing_unverified.otp_expires_at > datetime.utcnow():
+                logger.info(f"IDEMPOTENCY: Reusing existing OTP for {email_clean}")
+                otp = existing_unverified.otp_code 
+                # We do NOT delete/recreate. We just resend the email.
+            else:
+                # If expired, we update the existing record instead of deleting (cleaner)
+                logger.info(f"REFRESH: Updating expired OTP for {email_clean}")
+                existing_unverified.otp_code = otp
+                existing_unverified.otp_expires_at = expires_at
+                existing_unverified.password_hash = get_password_hash(user.password)
+                existing_unverified.full_name = user.full_name
+                db.commit()
+        else:
+            # 4. Create NEW User (Only if no unverified record exists)
+            hashed_pw = get_password_hash(user.password)
+            new_user = models.User(
+                email=email_clean, 
+                password_hash=hashed_pw, 
+                full_name=user.full_name,
+                role=user.role, 
+                is_email_verified=False, 
+                otp_code=otp,
+                otp_expires_at=expires_at
+            )
+            
+            db.add(new_user)
+            db.flush() # Get ID
 
-        # 6. Create Profile
-        if user.role == "organization":
-            db.add(models.Hospital(
-                owner_id=new_user.id, 
-                name=user.full_name, 
-                address=user.address or "Address Pending", 
-                pincode=user.pincode or "000000", 
-                lat=user.lat or 0.0, 
-                lng=user.lng or 0.0, 
-                is_verified=False
-            ))
-        elif user.role == "patient":
-            db.add(models.Patient(
-                user_id=new_user.id, 
-                age=user.age or 0, 
-                gender=user.gender
-            ))
-        elif user.role == "doctor":
-            if not user.hospital_name: 
-                db.rollback()
-                raise HTTPException(400, "Hospital name required")
-            hospital = db.query(models.Hospital).filter(models.Hospital.name == user.hospital_name).first()
-            if not hospital: 
-                db.rollback()
-                raise HTTPException(400, "Hospital not found")
-            db.add(models.Doctor(user_id=new_user.id, hospital_id=hospital.id, specialization=user.specialization, license_number=user.license_number, is_verified=False))
-        
-        db.commit()
+            # 5. Create Profile
+            if user.role == "organization":
+                db.add(models.Hospital(
+                    owner_id=new_user.id, 
+                    name=user.full_name, 
+                    address=user.address or "Address Pending", 
+                    pincode=user.pincode or "000000", 
+                    lat=user.lat or 0.0, 
+                    lng=user.lng or 0.0, 
+                    is_verified=False
+                ))
+            elif user.role == "patient":
+                db.add(models.Patient(
+                    user_id=new_user.id, 
+                    age=user.age or 0, 
+                    gender=user.gender
+                ))
+            elif user.role == "doctor":
+                if not user.hospital_name: 
+                    db.rollback()
+                    raise HTTPException(400, "Hospital name required")
+                hospital = db.query(models.Hospital).filter(models.Hospital.name == user.hospital_name).first()
+                if not hospital: 
+                    db.rollback()
+                    raise HTTPException(400, "Hospital not found")
+                db.add(models.Doctor(user_id=new_user.id, hospital_id=hospital.id, specialization=user.specialization, license_number=user.license_number, is_verified=False))
+            
+            db.commit()
         
         logger.info(f"REGISTER SUCCESS | Email: {email_clean} | OTP Saved: {otp}")
         background_tasks.add_task(email_service.send, email_clean, "Verification", f"OTP: {otp}")
@@ -319,15 +325,17 @@ def verify_otp(data: schemas.VerifyOTP, db: Session = Depends(get_db)):
         raise HTTPException(400, "User not found")
     
     # Debug what is in the database vs input
-    logger.info(f"DB CHECK | ID: {user.id} | OTP: {user.otp_code}")
+    logger.info(f"DB CHECK | ID: {user.id} | DB OTP: {user.otp_code} | Exp: {user.otp_expires_at}")
+
+    if user.is_email_verified:
+        return {"message": "Already verified", "status": "active", "role": user.role}
 
     if user.otp_expires_at and datetime.utcnow() > user.otp_expires_at:
-        db.delete(user) # Auto-cleanup expired users
-        db.commit()
+        # Don't delete immediately, just reject
         raise HTTPException(400, "OTP has expired. Please register again.")
         
     if str(user.otp_code).strip() != str(otp_input):
-        logger.error("OTP MISMATCH")
+        logger.error(f"OTP MISMATCH: DB={user.otp_code} vs Input={otp_input}")
         raise HTTPException(400, "Invalid OTP code")
         
     user.is_email_verified = True

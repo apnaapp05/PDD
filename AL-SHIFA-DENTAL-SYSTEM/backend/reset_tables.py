@@ -14,10 +14,11 @@ def seed_test_data():
     db = SessionLocal()
     try:
         # 1. ORGANIZATION (o@o.o / o)
+        # Removed 'address' from User model
         org = models.User(
             email="o@o.o", password_hash=get_hash("o"),
             full_name="o o", role="organization", is_email_verified=True,
-            phone_number="111-222-3333", address="Test Org HQ"
+            phone_number="111-222-3333"
         )
         db.add(org)
         db.commit()
@@ -25,7 +26,6 @@ def seed_test_data():
 
         hospital = models.Hospital(
             owner_id=org.id, name="o o", 
-            # REMOVED 'location' which caused the error
             address="123 Test St", is_verified=True
         )
         db.add(hospital)
@@ -33,10 +33,11 @@ def seed_test_data():
         db.refresh(hospital)
 
         # 2. DOCTOR (d@d.d / d)
+        # Removed 'address' from User model
         doc = models.User(
             email="d@d.d", password_hash=get_hash("d"),
             full_name="d d", role="doctor", is_email_verified=True,
-            phone_number="444-555-6666", address="Doctor Lane"
+            phone_number="444-555-6666"
         )
         db.add(doc)
         db.commit()
@@ -51,10 +52,11 @@ def seed_test_data():
         db.commit()
 
         # 3. PATIENT (p@p.p / p)
+        # Removed 'address' from User model
         pat = models.User(
             email="p@p.p", password_hash=get_hash("p"),
             full_name="p p", role="patient", is_email_verified=True,
-            phone_number="777-888-9999", address="Patient Street"
+            phone_number="777-888-9999"
         )
         db.add(pat)
         db.commit()
