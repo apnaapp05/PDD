@@ -2,7 +2,7 @@
 import os
 
 # Security
-SECRET_KEY = "AIzaSyAccxVtjqPgbMoTYr6l-oplruKAUalcMKo"
+SECRET_KEY = "myCode"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
 
