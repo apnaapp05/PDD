@@ -219,10 +219,10 @@ def get_verified_hospitals(db: Session = Depends(get_db)):
 
 @auth_router.post("/register")
 def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    # 1. Clean Email
+    # 1. Clean Inputs
     email_clean = user.email.lower().strip()
     
-    # 2. Check if email exists AND is verified
+    # 2. Check for VERIFIED account
     existing_verified = db.query(models.User).filter(
         models.User.email == email_clean, 
         models.User.is_email_verified == True
@@ -231,15 +231,30 @@ def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Se
     if existing_verified:
         raise HTTPException(400, "Email already registered")
 
-    # 3. Remove any unverified attempts for this email
-    db.query(models.User).filter(models.User.email == email_clean).delete()
-    db.commit()
+    # 3. CLEAN SLATE: Delete ALL unverified accounts with this email
+    # This prevents duplicate/stale rows causing the "Invalid OTP" issue
+    stale_users = db.query(models.User).filter(
+        models.User.email == email_clean,
+        models.User.is_email_verified == False
+    ).all()
+    
+    if stale_users:
+        logger.info(f"Cleaning up {len(stale_users)} stale unverified accounts for {email_clean}")
+        for stale in stale_users:
+            # Delete dependent records first to avoid Foreign Key errors
+            db.query(models.Hospital).filter(models.Hospital.owner_id == stale.id).delete()
+            db.query(models.Doctor).filter(models.Doctor.user_id == stale.id).delete()
+            db.query(models.Patient).filter(models.Patient.user_id == stale.id).delete()
+            db.delete(stale)
+        db.commit() # Commit deletion
 
     try:
+        # 4. Generate Credentials
         otp = generate_otp()
         hashed_pw = get_password_hash(user.password)
-        
-        # 4. Create User
+        expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+        # 5. Create NEW User
         new_user = models.User(
             email=email_clean, 
             password_hash=hashed_pw, 
@@ -247,13 +262,13 @@ def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Se
             role=user.role, 
             is_email_verified=False, 
             otp_code=otp,
-            otp_expires_at=datetime.utcnow() + timedelta(minutes=10)
+            otp_expires_at=expires_at
         )
         
         db.add(new_user)
-        db.flush() # Get ID, don't commit yet
+        db.flush() # Get ID
 
-        # 5. Create Profile based on Role
+        # 6. Create Profile
         if user.role == "organization":
             db.add(models.Hospital(
                 owner_id=new_user.id, 
@@ -272,64 +287,57 @@ def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Se
             ))
         elif user.role == "doctor":
             if not user.hospital_name: 
-                raise HTTPException(400, "Hospital name required for doctors")
+                db.rollback()
+                raise HTTPException(400, "Hospital name required")
             hospital = db.query(models.Hospital).filter(models.Hospital.name == user.hospital_name).first()
             if not hospital: 
+                db.rollback()
                 raise HTTPException(400, "Hospital not found")
-            
-            db.add(models.Doctor(
-                user_id=new_user.id, 
-                hospital_id=hospital.id, 
-                specialization=user.specialization, 
-                license_number=user.license_number, 
-                is_verified=False
-            ))
+            db.add(models.Doctor(user_id=new_user.id, hospital_id=hospital.id, specialization=user.specialization, license_number=user.license_number, is_verified=False))
         
-        # 6. Commit All
         db.commit()
         
-        # 7. Send Email
-        logger.info(f"Sending OTP {otp} to {email_clean}")
+        logger.info(f"REGISTER SUCCESS | Email: {email_clean} | OTP Saved: {otp}")
         background_tasks.add_task(email_service.send, email_clean, "Verification", f"OTP: {otp}")
         return {"message": "OTP sent", "email": email_clean}
         
     except Exception as e:
         db.rollback()
         logger.error(f"Registration Error: {str(e)}")
-        raise HTTPException(500, f"Registration Failed: {str(e)}")
+        raise HTTPException(500, f"Error: {str(e)}")
 
 @auth_router.post("/verify-otp")
 def verify_otp(data: schemas.VerifyOTP, db: Session = Depends(get_db)):
     email_clean = data.email.lower().strip()
     otp_input = data.otp.strip()
     
-    logger.info(f"Verifying OTP for {email_clean}")
+    logger.info(f"VERIFY REQUEST | Email: {email_clean} | Input: {otp_input}")
     
     user = db.query(models.User).filter(models.User.email == email_clean).first()
     
     if not user:
-        raise HTTPException(400, "User not found with this email")
-        
-    # Debug log to console
-    logger.info(f"DB OTP: {user.otp_code} | Input OTP: {otp_input}")
+        raise HTTPException(400, "User not found")
     
+    # Debug what is in the database vs input
+    logger.info(f"DB CHECK | ID: {user.id} | OTP: {user.otp_code}")
+
     if user.otp_expires_at and datetime.utcnow() > user.otp_expires_at:
+        db.delete(user) # Auto-cleanup expired users
+        db.commit()
         raise HTTPException(400, "OTP has expired. Please register again.")
         
-    if user.otp_code != otp_input: 
+    if str(user.otp_code).strip() != str(otp_input):
+        logger.error("OTP MISMATCH")
         raise HTTPException(400, "Invalid OTP code")
         
     user.is_email_verified = True
     user.otp_code = None
-    user.otp_expires_at = None
     db.commit()
-    
     return {"message": "Verified", "status": "active", "role": user.role}
 
 @auth_router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     username = form_data.username.lower().strip()
-    # Admin Backdoor
     if username == "myapp" and form_data.password == "asdf":
         admin = db.query(models.User).filter(models.User.email == "admin@system").first()
         if not admin:
@@ -341,7 +349,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user or not verify_password(form_data.password, user.password_hash): raise HTTPException(403, "Invalid Credentials")
     if not user.is_email_verified: raise HTTPException(403, "Email not verified")
     
-    # Check Approvals
     if user.role == "organization":
         h = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
         if h and not h.is_verified: raise HTTPException(403, "Account pending approval")
@@ -671,7 +678,7 @@ def update_inventory_qty(item_id: int, data: schemas.InventoryUpdate, user: mode
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-app.include_router(agent_router) # AI Agents Router
+app.include_router(agent_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(org_router)
