@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, and_
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 import bcrypt
@@ -105,6 +105,7 @@ def create_appointment(appt: schemas.AppointmentCreate, user: models.User = Depe
         start_dt = datetime.strptime(f"{appt.date} {appt.time}", "%Y-%m-%d %I:%M %p")
     except ValueError:
         try:
+             # Fallback for 24hr format
              start_dt = datetime.strptime(f"{appt.date} {appt.time}", "%Y-%m-%d %H:%M")
         except ValueError:
              raise HTTPException(400, "Invalid date/time format")
@@ -112,11 +113,26 @@ def create_appointment(appt: schemas.AppointmentCreate, user: models.User = Depe
     if start_dt < datetime.now():
         raise HTTPException(400, "Cannot book in the past")
 
+    end_dt = start_dt + timedelta(minutes=30)
+
+    # --- CHECK FOR OVERLAP (Robust) ---
+    # We check if (StartA < EndB) and (EndA > StartB)
+    existing_appt = db.query(models.Appointment).filter(
+        models.Appointment.doctor_id == doctor.id,
+        models.Appointment.status.in_(["confirmed", "blocked", "completed"]),
+        models.Appointment.start_time < end_dt,
+        models.Appointment.end_time > start_dt
+    ).first()
+
+    if existing_appt:
+        status_msg = "unavailable" if existing_appt.status == "blocked" else "already booked"
+        raise HTTPException(400, f"This time slot is {status_msg}. Please choose another time.")
+
     new_appt = models.Appointment(
         doctor_id=appt.doctor_id,
         patient_id=patient_profile.id,
         start_time=start_dt,
-        end_time=start_dt + timedelta(minutes=30),
+        end_time=end_dt,
         status="confirmed",
         treatment_type=appt.reason,
         notes="Booked via Patient Portal"
@@ -155,20 +171,15 @@ def get_my_appointments(user: models.User = Depends(get_current_user), db: Sessi
 def cancel_patient_appointment(appt_id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Allow patient to cancel their own appointment"""
     if user.role != "patient": raise HTTPException(403, "Access denied")
-    
     patient = db.query(models.Patient).filter(models.Patient.user_id == user.id).first()
     if not patient: raise HTTPException(404, "Patient profile not found")
     
     appt = db.query(models.Appointment).filter(models.Appointment.id == appt_id).first()
     if not appt: raise HTTPException(404, "Appointment not found")
     
-    # Security Check: Does this appointment belong to this patient?
-    if appt.patient_id != patient.id:
-        raise HTTPException(403, "You can only cancel your own appointments")
-        
-    if appt.status in ["cancelled", "completed"]:
-        raise HTTPException(400, "Appointment is already cancelled or completed")
-
+    if appt.patient_id != patient.id: raise HTTPException(403, "You can only cancel your own appointments")
+    if appt.status in ["cancelled", "completed"]: raise HTTPException(400, "Appointment is already cancelled or completed")
+    
     appt.status = "cancelled"
     db.commit()
     return {"message": "Appointment cancelled successfully"}
@@ -178,20 +189,14 @@ def get_my_records(user: models.User = Depends(get_current_user), db: Session = 
     if user.role != "patient": raise HTTPException(403, "Patients only")
     patient = db.query(models.Patient).filter(models.Patient.user_id == user.id).first()
     if not patient: return []
-
     records = db.query(models.MedicalRecord).filter(models.MedicalRecord.patient_id == patient.id).order_by(models.MedicalRecord.date.desc()).all()
     results = []
     for rec in records:
         doc = rec.doctor
         hospital = doc.hospital if doc else None
         results.append({
-            "id": rec.id,
-            "date": rec.date,
-            "diagnosis": rec.diagnosis,
-            "prescription": rec.prescription,
-            "notes": rec.notes,
-            "doctor_name": doc.user.full_name if doc and doc.user else "Unknown",
-            "hospital_name": hospital.name if hospital else "Unknown"
+            "id": rec.id, "date": rec.date, "diagnosis": rec.diagnosis, "prescription": rec.prescription, "notes": rec.notes,
+            "doctor_name": doc.user.full_name if doc and doc.user else "Unknown", "hospital_name": hospital.name if hospital else "Unknown"
         })
     return results
 
@@ -427,51 +432,81 @@ def get_doctor_schedule(user: models.User = Depends(get_current_user), db: Sessi
     if user.role != "doctor": raise HTTPException(403, "Access denied")
     doctor = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
     if not doctor: return []
+    
     now = datetime.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    appointments = db.query(models.Appointment).filter(models.Appointment.doctor_id == doctor.id, models.Appointment.start_time >= today_start).order_by(models.Appointment.start_time).all()
+    
+    appointments = db.query(models.Appointment).filter(
+        models.Appointment.doctor_id == doctor.id,
+        models.Appointment.start_time >= today_start
+    ).order_by(models.Appointment.start_time).all()
+
     result = []
     for appt in appointments:
-        pat = db.query(models.Patient).filter(models.Patient.id == appt.patient_id).first()
+        pat = db.query(models.Patient).filter(models.Patient.id == appt.patient_id).first() if appt.patient_id else None
         pat_user = pat.user if pat else None
-        result.append({"id": appt.id, "patient_name": pat_user.full_name if pat_user else "Unknown", "type": appt.treatment_type, "status": appt.status, "date": appt.start_time.strftime("%Y-%m-%d"), "time": appt.start_time.strftime("%I:%M %p"), "notes": appt.notes})
+        
+        result.append({
+            "id": appt.id,
+            "patient_name": pat_user.full_name if pat_user else "Unknown",
+            "type": appt.treatment_type,
+            "status": appt.status,
+            "date": appt.start_time.strftime("%Y-%m-%d"),
+            "time": appt.start_time.strftime("%I:%M %p"),
+            "notes": appt.notes,
+            # NEW: Help frontend identify ranges
+            "start_iso": appt.start_time.isoformat(),
+            "end_iso": appt.end_time.isoformat()
+        })
     return result
 
 @doctor_router.post("/schedule/block")
 def block_schedule_slot(data: schemas.BlockSlotCreate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Block a time slot for the doctor"""
+    """Block a time slot or full day"""
     if user.role != "doctor": raise HTTPException(403, "Access denied")
     doctor = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
-    if not doctor: raise HTTPException(404, "Doctor profile not found")
+    if not doctor: raise HTTPException(404, "Doctor not found")
 
     try:
-        start_dt = datetime.strptime(f"{data.date} {data.time}", "%Y-%m-%d %I:%M %p")
+        if data.is_whole_day:
+            # Block 00:00 to 23:59:59
+            date_obj = datetime.strptime(data.date, "%Y-%m-%d")
+            start_dt = date_obj.replace(hour=0, minute=0, second=0)
+            end_dt = date_obj.replace(hour=23, minute=59, second=59)
+            block_title = "Full Day Leave"
+        else:
+            # Block specific slot (30 mins)
+            start_dt = datetime.strptime(f"{data.date} {data.time}", "%Y-%m-%d %I:%M %p")
+            end_dt = start_dt + timedelta(minutes=30)
+            block_title = "Blocked Slot"
     except ValueError:
-        try:
-             start_dt = datetime.strptime(f"{data.date} {data.time}", "%Y-%m-%d %H:%M")
-        except ValueError:
-             raise HTTPException(400, "Invalid date/time format")
+        raise HTTPException(400, "Invalid date/time format")
 
-    if start_dt < datetime.now():
-        raise HTTPException(400, "Cannot block past time slots")
+    if start_dt < datetime.now(): raise HTTPException(400, "Cannot block past time")
 
-    # Create a 'blocked' appointment (without a patient_id or using a placeholder if needed, usually just nullable)
-    # Since Patient ID is nullable in models (ForeignKey typically allows null unless nullable=False), check models.py
-    # models.Appointment.patient_id is defined as `patient_id = Column(Integer, ForeignKey("patients.id"))`
-    # In SQLAlchemy, Columns are nullable by default.
-    
+    # Check overlaps with existing CONFIRMED appointments
+    overlap = db.query(models.Appointment).filter(
+        models.Appointment.doctor_id == doctor.id,
+        models.Appointment.start_time < end_dt,
+        models.Appointment.end_time > start_dt,
+        models.Appointment.status == "confirmed"
+    ).first()
+
+    if overlap:
+        raise HTTPException(400, "Cannot block: You have confirmed appointments during this time.")
+
+    # Create Block
     new_block = models.Appointment(
         doctor_id=doctor.id,
-        patient_id=None, # Explicitly None for blocked slots
+        patient_id=None,
         start_time=start_dt,
-        end_time=start_dt + timedelta(minutes=30),
+        end_time=end_dt,
         status="blocked",
-        treatment_type="Blocked Slot",
+        treatment_type=block_title,
         notes=data.reason
     )
-    db.add(new_block)
-    db.commit()
-    return {"message": "Slot blocked successfully"}
+    db.add(new_block); db.commit()
+    return {"message": "Blocked successfully"}
 
 @doctor_router.post("/join")
 def join_organization(data: schemas.DoctorJoinRequest, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -530,6 +565,7 @@ def add_inventory_item(item: schemas.InventoryItemCreate, user: models.User = De
 
 @doctor_router.post("/inventory/upload")
 def upload_inventory(file: UploadFile = File(...), user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Bulk Upload Inventory from CSV"""
     if user.role != "doctor": raise HTTPException(403, "Access denied")
     doctor = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
     if not doctor or not doctor.hospital_id: raise HTTPException(400, "No hospital linked")
@@ -538,19 +574,32 @@ def upload_inventory(file: UploadFile = File(...), user: models.User = Depends(g
         csvReader = csv.DictReader(codecs.iterdecode(file.file, 'utf-8'))
         count = 0
         for row in csvReader:
+            # Normalise headers to lower case for consistent access
             data = {k.lower(): v for k, v in row.items()}
+            
             if 'name' not in data or 'quantity' not in data: continue
+            
             name = data['name'].strip()
             try:
                 qty = int(data['quantity'])
                 thresh = int(data.get('threshold', 10))
-            except ValueError: continue 
+            except ValueError:
+                continue 
+                
             unit = data.get('unit', 'pcs').strip()
             
-            existing = db.query(models.InventoryItem).filter(models.InventoryItem.hospital_id == doctor.hospital_id, models.InventoryItem.name == name).first()
-            if existing: existing.quantity += qty
-            else: db.add(models.InventoryItem(hospital_id=doctor.hospital_id, name=name, quantity=qty, unit=unit, threshold=thresh))
+            existing = db.query(models.InventoryItem).filter(
+                models.InventoryItem.hospital_id == doctor.hospital_id,
+                models.InventoryItem.name == name
+            ).first()
+            
+            if existing:
+                existing.quantity += qty
+            else:
+                new_item = models.InventoryItem(hospital_id=doctor.hospital_id, name=name, quantity=qty, unit=unit, threshold=thresh)
+                db.add(new_item)
             count += 1
+        
         db.commit()
         return {"message": f"Successfully processed {count} items"}
     except Exception as e:

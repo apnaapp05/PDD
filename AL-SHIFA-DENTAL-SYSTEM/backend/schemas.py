@@ -72,11 +72,12 @@ class AppointmentOut(BaseModel):
     class Config:
         orm_mode = True
 
-# --- NEW: BLOCK SLOT ---
+# --- BLOCK SLOT (UPDATED) ---
 class BlockSlotCreate(BaseModel):
     date: str
-    time: str
+    time: Optional[str] = None # Optional if whole day
     reason: str
+    is_whole_day: bool = False # New flag
 
 # --- MEDICAL RECORDS ---
 class RecordCreate(BaseModel):

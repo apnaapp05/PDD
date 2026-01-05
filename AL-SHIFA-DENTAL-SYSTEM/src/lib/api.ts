@@ -55,7 +55,6 @@ export const DoctorAPI = {
   addMedicalRecord: async (id: number, data: { diagnosis: string; prescription: string; notes: string }) =>
     api.post(`/doctor/patients/${id}/records`, data),
     
-  // INVENTORY
   getInventory: async () => api.get("/doctor/inventory"),
   addInventoryItem: async (data: { name: string; quantity: number; unit: string; threshold: number }) => 
     api.post("/doctor/inventory", data),
@@ -63,9 +62,9 @@ export const DoctorAPI = {
   uploadInventory: async (formData: FormData) => 
     api.post("/doctor/inventory/upload", formData, { headers: { "Content-Type": "multipart/form-data" } }),
 
-  // SCHEDULE
   getSchedule: async () => api.get("/doctor/schedule"),
-  blockSlot: async (data: { date: string; time: string; reason: string }) => 
+  // UPDATED
+  blockSlot: async (data: { date: string; time?: string; reason: string; is_whole_day: boolean }) => 
     api.post("/doctor/schedule/block", data),
 
   getAiInsights: async () => Promise.resolve({ data: [] }), 

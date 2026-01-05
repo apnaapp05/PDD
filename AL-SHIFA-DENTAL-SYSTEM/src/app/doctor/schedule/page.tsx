@@ -14,7 +14,7 @@ export default function SchedulePage() {
   
   // Block Slot State
   const [showBlockForm, setShowBlockForm] = useState(false);
-  const [blockData, setBlockData] = useState({ date: "", time: "09:00 AM", reason: "Unavailable" });
+  const [blockData, setBlockData] = useState({ date: "", time: "09:00 AM", reason: "Unavailable", is_whole_day: false });
 
   const timeSlots = ["09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM"];
 
@@ -38,8 +38,12 @@ export default function SchedulePage() {
   }, []);
 
   const handleBlockSlot = async () => {
-    if (!blockData.date || !blockData.time) {
-      alert("Please select date and time");
+    if (!blockData.date) {
+      alert("Please select date");
+      return;
+    }
+    if (!blockData.is_whole_day && !blockData.time) {
+      alert("Please select time or check Whole Day");
       return;
     }
     
@@ -47,6 +51,7 @@ export default function SchedulePage() {
       await DoctorAPI.blockSlot(blockData);
       alert("Slot blocked successfully");
       setShowBlockForm(false);
+      setBlockData({ date: "", time: "09:00 AM", reason: "Unavailable", is_whole_day: false });
       fetchSchedule(); // Refresh grid
     } catch (error: any) {
       alert(error.response?.data?.detail || "Failed to block slot");
@@ -55,7 +60,20 @@ export default function SchedulePage() {
 
   const getApptForSlot = (time: string) => {
     const todayStr = new Date().toISOString().split('T')[0];
-    return appointments.find(a => a.date === todayStr && a.time === time);
+    
+    return appointments.find(a => {
+      // Check for exact slot match on this day
+      const isExactMatch = a.date === todayStr && a.time === time;
+      
+      // Check for whole day block on this day
+      // A whole day block usually has status='blocked' and covers the whole range
+      // We identify it by checking if start and end cover the whole day
+      // Or simply, the API returns it with start/end ISO times.
+      // Heuristic: If it's a "Blocked" status appointment on today, check if it covers the whole day.
+      const isWholeDay = a.status === 'blocked' && a.date === todayStr && a.type === "Full Day Leave";
+      
+      return isExactMatch || isWholeDay;
+    });
   };
 
   return (
@@ -67,7 +85,6 @@ export default function SchedulePage() {
                 <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
             </Button>
             
-            {/* FIXED BUTTON: Removed variant="doctor", added specific red styling */}
             <Button 
               onClick={() => setShowBlockForm(!showBlockForm)} 
               className="bg-red-600 hover:bg-red-700 text-white border-0"
@@ -81,28 +98,47 @@ export default function SchedulePage() {
       {/* Block Slot Form Overlay */}
       {showBlockForm && (
         <Card className="bg-slate-50 border-2 border-red-100 mb-6 animate-in slide-in-from-top-4">
-          <CardContent className="p-4 flex flex-col md:flex-row gap-4 items-end">
-            <div className="w-full md:w-1/3">
-              <label className="text-xs font-bold text-slate-500 mb-1 block">Date</label>
-              <Input type="date" value={blockData.date} onChange={(e) => setBlockData({...blockData, date: e.target.value})} />
+          <CardContent className="p-4 space-y-4">
+            <div className="flex flex-col md:flex-row gap-4 items-end">
+              <div className="w-full md:w-1/3">
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Date</label>
+                <Input type="date" value={blockData.date} onChange={(e) => setBlockData({...blockData, date: e.target.value})} />
+              </div>
+              
+              {!blockData.is_whole_day && (
+                <div className="w-full md:w-1/3">
+                  <label className="text-xs font-bold text-slate-500 mb-1 block">Time</label>
+                  <select 
+                    className="w-full h-10 rounded-md border border-slate-300 px-3 bg-white text-sm"
+                    value={blockData.time}
+                    onChange={(e) => setBlockData({...blockData, time: e.target.value})}
+                  >
+                    {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div className="w-full md:w-1/3">
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Reason</label>
+                <Input value={blockData.reason} onChange={(e) => setBlockData({...blockData, reason: e.target.value})} placeholder="Meeting, Leave, etc." />
+              </div>
             </div>
-            <div className="w-full md:w-1/3">
-              <label className="text-xs font-bold text-slate-500 mb-1 block">Time</label>
-              <select 
-                className="w-full h-10 rounded-md border border-slate-300 px-3 bg-white text-sm"
-                value={blockData.time}
-                onChange={(e) => setBlockData({...blockData, time: e.target.value})}
-              >
-                {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
+
+            <div className="flex items-center justify-between">
+               <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={blockData.is_whole_day} 
+                    onChange={(e) => setBlockData({...blockData, is_whole_day: e.target.checked})}
+                    className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-500" 
+                  />
+                  <span className="text-sm font-bold text-slate-700">Block Whole Day (Leave)</span>
+               </label>
+
+               <Button onClick={handleBlockSlot} className="bg-slate-900 hover:bg-slate-800 text-white">
+                 Confirm Block
+               </Button>
             </div>
-            <div className="w-full md:w-1/3">
-              <label className="text-xs font-bold text-slate-500 mb-1 block">Reason</label>
-              <Input value={blockData.reason} onChange={(e) => setBlockData({...blockData, reason: e.target.value})} placeholder="Meeting, Lunch, etc." />
-            </div>
-            <Button onClick={handleBlockSlot} className="bg-slate-900 hover:bg-slate-800 text-white w-full md:w-auto">
-              Confirm Block
-            </Button>
           </CardContent>
         </Card>
       )}
@@ -138,7 +174,7 @@ export default function SchedulePage() {
                             }`}>
                                 <div className="flex justify-between items-center">
                                     <span className={`font-bold ${isBlocked ? 'text-slate-800' : 'text-blue-900'}`}>
-                                      {isBlocked ? '⛔ Slot Blocked' : appt.type}
+                                      {isBlocked ? (appt.type === "Full Day Leave" ? "🏖️ Full Day Leave" : "⛔ Blocked") : appt.type}
                                     </span>
                                     <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
                                       isBlocked ? 'bg-slate-200 text-slate-700' : 
@@ -188,7 +224,7 @@ export default function SchedulePage() {
                             </div>
                             <div>
                                 <p className="text-sm font-bold text-slate-900">
-                                    {appt.status === 'blocked' ? 'Blocked Slot' : appt.patient_name}
+                                    {appt.status === 'blocked' ? (appt.type === "Full Day Leave" ? "Full Day Leave" : "Blocked Slot") : appt.patient_name}
                                 </p>
                                 <p className="text-xs text-slate-500">{appt.type}</p>
                                 <div className="flex items-center gap-1 mt-1 text-xs text-blue-600 font-medium">
