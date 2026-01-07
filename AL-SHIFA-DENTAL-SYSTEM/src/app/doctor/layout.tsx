@@ -1,131 +1,155 @@
 "use client";
+
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { 
-  LayoutDashboard, Calendar, Users, Package, DollarSign, 
-  Menu, X, LogOut, Bot
+  LayoutDashboard, 
+  Users, 
+  Package, 
+  Stethoscope, // Added Icon
+  CreditCard,
+  LogOut, 
+  Menu, 
+  X,
+  Calendar
 } from "lucide-react";
-import { AuthAPI } from "@/lib/api"; // Import API to fetch real profile
+import { AuthAPI } from "@/lib/api";
 
 export default function DoctorLayout({ children }: { children: React.ReactNode }) {
-  const [isSidebarOpen, setSidebarOpen] = useState(true);
-  const [doctorName, setDoctorName] = useState("Loading...");
-  const [initials, setInitials] = useState("DR");
   const router = useRouter();
+  const pathname = usePathname();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+  const [docName, setDocName] = useState("Loading...");
+  const [initials, setInitials] = useState("DR");
 
-  // FETCH REAL USER PROFILE
   useEffect(() => {
+    const checkScreen = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) setIsSidebarOpen(false);
+      else setIsSidebarOpen(true);
+    };
+    checkScreen();
+    window.addEventListener("resize", checkScreen);
+
     const fetchProfile = async () => {
       try {
-        const response = await AuthAPI.getMe();
-        const fullName = response.data.full_name || "Doctor";
-        setDoctorName(fullName);
-        
-        // Calculate Initials (e.g., "John Doe" -> "JD")
-        const nameParts = fullName.split(" ");
-        if (nameParts.length >= 2) {
-          setInitials(`${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase());
-        } else {
-          setInitials(fullName.substring(0, 2).toUpperCase());
-        }
-
+        const res = await AuthAPI.getMe();
+        const name = res.data.full_name || "Doctor";
+        setDocName(name);
+        const init = name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase();
+        setInitials(init);
       } catch (error) {
-        console.error("Failed to fetch doctor profile", error);
-        // If unauthorized, the API interceptor or protected route will handle redirect
+        console.error("Failed to load doctor details", error);
+        router.push("/auth/doctor/login");
       }
     };
-    
     fetchProfile();
-  }, []);
+
+    return () => window.removeEventListener("resize", checkScreen);
+  }, [router]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("role");
-    router.push("/auth/role-selection");
+    router.push("/auth/doctor/login");
   };
 
   const navItems = [
-    { name: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
-    { name: "AI Agents", href: "/doctor/agents", icon: Bot }, 
-    { name: "Schedule", href: "/doctor/schedule", icon: Calendar },
-    { name: "Patients", href: "/doctor/patients", icon: Users },
-    { name: "Inventory", href: "/doctor/inventory", icon: Package },
-    { name: "Finance", href: "/doctor/finance", icon: DollarSign },
+    { label: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
+    { label: "My Schedule", href: "/doctor/schedule", icon: Calendar },
+    { label: "My Patients", href: "/doctor/patients", icon: Users },
+    { label: "Inventory", href: "/doctor/inventory", icon: Package },
+    // NEW LINK ADDED HERE
+    { label: "Treatments & Prices", href: "/doctor/treatments", icon: Stethoscope },
+    { label: "Financials", href: "/doctor/finance", icon: CreditCard },
   ];
 
   return (
-    <div className="flex h-screen w-full bg-slate-50">
+    <div className="flex h-screen bg-slate-50 overflow-hidden">
       
-      {/* Sidebar (Collapsible) */}
-      <aside className={`transition-all duration-300 ease-in-out flex flex-col shadow-2xl z-20 
-        ${isSidebarOpen ? "w-64" : "w-20"} 
-        bg-gradient-to-b from-slate-900 to-slate-800 text-white`}
+      {isMobile && isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/50 z-40"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      <aside 
+        className={`fixed md:relative z-50 h-full bg-indigo-900 text-white transition-all duration-300 flex flex-col
+          ${isSidebarOpen ? "w-64 translate-x-0" : "w-0 -translate-x-full md:w-0 md:translate-x-0 overflow-hidden"}
+        `}
       >
-        <div className="p-4 flex items-center justify-between">
-          {isSidebarOpen && (
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-white">Al-Shifa</h1>
-              <p className="text-xs text-slate-400">Doctor Portal</p>
-            </div>
-          )}
-          <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-white/10 rounded-lg">
-             {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+        <div className="h-16 flex items-center justify-between px-6 border-b border-indigo-800">
+           <div className="flex items-center gap-2 font-bold text-lg">
+             <Stethoscope className="h-6 w-6 text-indigo-300" />
+             <span className="whitespace-nowrap">Doctor Portal</span>
+           </div>
+           {isMobile && (
+             <button onClick={() => setIsSidebarOpen(false)}>
+               <X className="h-5 w-5 text-indigo-300" />
+             </button>
+           )}
         </div>
-        
-        <nav className="flex-1 px-3 space-y-2 mt-4">
-          {navItems.map((item) => (
-            <Link 
-              key={item.name} 
-              href={item.href}
-              className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg hover:bg-white/10 transition-colors
-                ${!isSidebarOpen && "justify-center px-2"}`}
-              title={!isSidebarOpen ? item.name : ""}
-            >
-              <item.icon className={`h-5 w-5 ${isSidebarOpen ? "mr-3" : ""}`} />
-              {isSidebarOpen && item.name}
-            </Link>
-          ))}
+
+        <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
+          {navItems.map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <Link 
+                key={item.href} 
+                href={item.href}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  ${isActive 
+                    ? "bg-indigo-800 text-white shadow-sm" 
+                    : "text-indigo-100 hover:bg-indigo-800/50 hover:text-white"
+                  }
+                `}
+              >
+                <item.icon className={`h-5 w-5 ${isActive ? "text-indigo-300" : "text-indigo-400"}`} />
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-indigo-800">
           <button 
             onClick={handleLogout}
-            className={`flex items-center w-full px-4 py-2 text-sm font-medium text-red-300 hover:text-white transition-colors
-            ${!isSidebarOpen && "justify-center"}`}
+            className="flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium text-red-200 hover:bg-red-900/30 hover:text-red-100 rounded-lg transition-colors"
           >
-            <LogOut className={`h-5 w-5 ${isSidebarOpen ? "mr-3" : ""}`} />
-            {isSidebarOpen && "Logout"}
+            <LogOut className="h-5 w-5" />
+            Logout
           </button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Header */}
-        <header className="bg-white h-16 border-b border-slate-200 flex items-center justify-between px-8 shadow-sm">
-           <h2 className="text-lg font-semibold text-slate-800">Clinic Overview</h2>
-           
-           {/* Profile Link (Dynamic Name Fix) */}
-           <Link href="/shared/profile">
-             <div className="flex items-center gap-4 cursor-pointer hover:bg-slate-50 p-2 rounded-lg transition-colors">
-               <div className="text-right hidden md:block">
-                 <p className="text-sm font-bold text-slate-900">{doctorName}</p>
-                 <p className="text-xs text-green-600 font-medium">Online</p>
-               </div>
-               <div className="h-10 w-10 rounded-full bg-slate-900 flex items-center justify-center text-white font-bold border-2 border-slate-200">
-                 {initials}
-               </div>
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8">
+          <button 
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-2 rounded-md hover:bg-slate-100 text-slate-600 focus:outline-none"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
+          <div className="flex items-center gap-4">
+             <div className="text-right hidden sm:block">
+               <p className="text-sm font-bold text-slate-700">{docName}</p>
+               <p className="text-[10px] text-slate-500">Verified Practitioner</p>
              </div>
-           </Link>
+             <div className="h-9 w-9 bg-indigo-100 rounded-full flex items-center justify-center border border-indigo-200 text-indigo-700 font-bold text-xs">
+               {initials}
+             </div>
+          </div>
         </header>
 
-        {/* Page Content */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <main className="flex-1 overflow-auto p-4 sm:p-8">
           {children}
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

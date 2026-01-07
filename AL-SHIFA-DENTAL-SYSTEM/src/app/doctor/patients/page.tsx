@@ -4,8 +4,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, Plus, User, ChevronRight, Loader2 } from "lucide-react";
-import api from "@/lib/api";
+import { Search, Plus, ChevronRight, Loader2, User } from "lucide-react";
+import { DoctorAPI } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 export default function PatientList() {
@@ -20,9 +20,7 @@ export default function PatientList() {
       if (!token) return router.push("/auth/doctor/login");
 
       try {
-        const response = await api.get("/doctor/patients", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await DoctorAPI.getPatients();
         setPatients(response.data);
       } catch (error) {
         console.error("Error fetching patients", error);
@@ -42,7 +40,7 @@ export default function PatientList() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-slate-900">My Patients</h1>
-        <Button variant="doctor">
+        <Button variant="default" className="bg-blue-600 hover:bg-blue-700">
           <Plus className="mr-2 h-4 w-4" /> Add New Record
         </Button>
       </div>
@@ -66,11 +64,14 @@ export default function PatientList() {
         <CardContent className="p-0">
           {loading ? (
             <div className="flex justify-center items-center py-10">
-              <Loader2 className="h-8 w-8 animate-spin text-doctor" />
+              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             </div>
           ) : filteredPatients.length === 0 ? (
             <div className="text-center py-10 text-slate-500">
-              No patients found. Appointments will appear here.
+              <div className="flex justify-center mb-4">
+                <User className="h-10 w-10 text-slate-300" />
+              </div>
+              <p>No patients found. Patients will appear here once they book an appointment.</p>
             </div>
           ) : (
             <table className="w-full text-left text-sm">
@@ -99,13 +100,15 @@ export default function PatientList() {
                     <td className="p-4 text-slate-500">{p.last_visit}</td>
                     <td className="p-4 text-slate-500">{p.condition}</td>
                     <td className="p-4">
-                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        p.status === "Active" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-700"
+                      }`}>
                         {p.status}
                       </span>
                     </td>
                     <td className="p-4">
                       <Link href={`/doctor/patients/${p.id}`}>
-                        <Button variant="ghost" size="sm" className="text-doctor">
+                        <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700">
                           View <ChevronRight className="ml-1 h-3 w-3" />
                         </Button>
                       </Link>

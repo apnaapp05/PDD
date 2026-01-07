@@ -11,7 +11,7 @@ import {
   Menu, 
   X
 } from "lucide-react";
-import { AuthAPI } from "@/lib/api"; // Import API
+import { AuthAPI } from "@/lib/api"; 
 
 export default function OrganizationLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -19,13 +19,10 @@ export default function OrganizationLayout({ children }: { children: React.React
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   
-  // NEW: State for Dynamic Header Data
   const [orgName, setOrgName] = useState("Loading...");
   const [initials, setInitials] = useState("OR");
 
-  // Handle Responsive Sidebar & Fetch Profile
   useEffect(() => {
-    // 1. Mobile Check
     const checkScreen = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
@@ -35,15 +32,11 @@ export default function OrganizationLayout({ children }: { children: React.React
     checkScreen();
     window.addEventListener("resize", checkScreen);
 
-    // 2. Fetch Organization Name
     const fetchOrgProfile = async () => {
       try {
         const res = await AuthAPI.getMe();
-        // For Organization users, 'full_name' is the Clinic Name
         const name = res.data.full_name || "Organization";
         setOrgName(name);
-        
-        // Generate Initials (e.g. "Al-Shifa" -> "AL")
         const init = name.substring(0, 2).toUpperCase();
         setInitials(init);
       } catch (error) {
@@ -64,14 +57,14 @@ export default function OrganizationLayout({ children }: { children: React.React
 
   const navItems = [
     { label: "Dashboard", href: "/organization/dashboard", icon: LayoutDashboard },
-    { label: "My Doctors", href: "/organization/doctors", icon: Users }, 
+    { label: "My Doctors", href: "/organization/doctors", icon: Users },
+    // Removed Treatments link
     { label: "Hospital Profile", href: "/organization/profile", icon: Building2 },
   ];
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       
-      {/* MOBILE OVERLAY */}
       {isMobile && isSidebarOpen && (
         <div 
           className="fixed inset-0 bg-slate-900/50 z-40"
@@ -79,7 +72,6 @@ export default function OrganizationLayout({ children }: { children: React.React
         />
       )}
 
-      {/* SIDEBAR */}
       <aside 
         className={`fixed md:relative z-50 h-full bg-blue-900 text-white transition-all duration-300 flex flex-col
           ${isSidebarOpen ? "w-64 translate-x-0" : "w-0 -translate-x-full md:w-0 md:translate-x-0 overflow-hidden"}
@@ -129,10 +121,7 @@ export default function OrganizationLayout({ children }: { children: React.React
         </div>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        
-        {/* Top Header */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8">
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -142,12 +131,10 @@ export default function OrganizationLayout({ children }: { children: React.React
           </button>
 
           <div className="flex items-center gap-4">
-             {/* UPDATED: Dynamic Name Display */}
              <div className="text-right hidden sm:block">
                <p className="text-sm font-bold text-slate-700">{orgName}</p>
                <p className="text-[10px] text-slate-500">Authorized Access</p>
              </div>
-             {/* UPDATED: Dynamic Initials */}
              <div className="h-9 w-9 bg-blue-100 rounded-full flex items-center justify-center border border-blue-200 text-blue-700 font-bold text-xs">
                {initials}
              </div>

@@ -11,7 +11,7 @@ DATABASE_URL = "postgresql://postgres:ADLAB@127.0.0.1:5432/alshifa_db"
 
 # AI Configuration
 # PASTE YOUR GEMINI API KEY BELOW inside the quotes
-GEMINI_API_KEY = "your API key here" 
+GEMINI_API_KEY = "AIzaSyAccxVtjqPgbMoTYr6l-oplruKAUalcMKo" 
 
 # Agent Settings
 MAX_AGENT_STEPS = 5

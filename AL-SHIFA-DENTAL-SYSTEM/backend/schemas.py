@@ -1,59 +1,69 @@
-from pydantic import BaseModel, EmailStr
+# backend/schemas.py
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
-# --- AUTH ---
-class UserCreate(BaseModel):
-    email: EmailStr
+# --- USER & AUTH ---
+class UserBase(BaseModel):
+    email: str
+
+class UserCreate(UserBase):
     password: str
     full_name: str
-    role: str
-    gender: Optional[str] = None
-    age: Optional[int] = None
+    role: str # organization, doctor, patient
+    # Optional fields for profile creation
+    hospital_name: Optional[str] = None
     address: Optional[str] = None
     pincode: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
     specialization: Optional[str] = None
     license_number: Optional[str] = None
-    hospital_name: Optional[str] = None
+    # For doctor scheduling (optional)
     scheduling_config: Optional[dict] = None
 
-class UserOut(BaseModel):
+class UserOut(UserBase):
     id: int
-    email: str
     full_name: str
     role: str
-    phone_number: Optional[str] = None
     is_email_verified: bool
     class Config:
         orm_mode = True
+
+class UserProfileUpdate(BaseModel):
+    full_name: str
+    email: str
+    phone_number: str
+
+# --- AUTH ---
+class Login(BaseModel):
+    username: str
+    password: str
 
 class VerifyOTP(BaseModel):
     email: str
     otp: str
 
-class Login(BaseModel):
-    username: str
-    password: str
-
-# --- PROFILE & ORG ---
-class UserProfileUpdate(BaseModel):
-    full_name: str
-    email: str
-    phone_number: Optional[str] = None
-    address: Optional[str] = None 
-
+# --- ORGANIZATION ---
 class LocationUpdate(BaseModel):
     address: str
     pincode: str
     lat: float
     lng: float
 
+# --- DOCTOR ---
 class DoctorJoinRequest(BaseModel):
     hospital_id: int
     specialization: str
     license_number: str
+
+class BlockSlotCreate(BaseModel):
+    date: str
+    time: Optional[str] = None
+    reason: str
+    is_whole_day: bool
 
 # --- APPOINTMENTS ---
 class AppointmentCreate(BaseModel):
@@ -62,45 +72,59 @@ class AppointmentCreate(BaseModel):
     time: str
     reason: str
 
-class AppointmentOut(BaseModel):
-    id: int
-    doctor_id: int
-    patient_id: int
-    start_time: datetime
-    status: str
-    treatment_type: str
-    class Config:
-        orm_mode = True
-
-# --- BLOCK SLOT (UPDATED) ---
-class BlockSlotCreate(BaseModel):
-    date: str
-    time: Optional[str] = None # Optional if whole day
-    reason: str
-    is_whole_day: bool = False # New flag
-
-# --- MEDICAL RECORDS ---
-class RecordCreate(BaseModel):
-    diagnosis: str
-    prescription: str
-    notes: Optional[str] = ""
-
-class RecordOut(BaseModel):
-    id: int
-    date: datetime
-    diagnosis: str
-    prescription: str
-    doctor_name: str
-    hospital_name: str
-    class Config:
-        orm_mode = True
-
 # --- INVENTORY ---
 class InventoryItemCreate(BaseModel):
     name: str
     quantity: int
     unit: str
-    threshold: Optional[int] = 10
+    threshold: int = 10
 
 class InventoryUpdate(BaseModel):
     quantity: int
+
+# --- MEDICAL RECORDS ---
+class RecordCreate(BaseModel):
+    diagnosis: str
+    prescription: str
+    notes: str
+
+# --- TREATMENTS (THE "MENU") ---
+class TreatmentCreate(BaseModel):
+    name: str
+    cost: float
+    description: Optional[str] = None
+
+class TreatmentLinkCreate(BaseModel):
+    item_id: int
+    quantity: int
+
+# Helpers for nesting
+class InventoryItemRef(BaseModel):
+    name: str
+    unit: str
+    class Config:
+        orm_mode = True
+
+class TreatmentLinkOut(BaseModel):
+    quantity_required: int
+    item: InventoryItemRef
+    class Config:
+        orm_mode = True
+
+class TreatmentOut(BaseModel):
+    id: int
+    name: str
+    cost: float
+    description: Optional[str]
+    required_items: List[TreatmentLinkOut] = []
+    class Config:
+        orm_mode = True
+
+# --- INVOICES ---
+class InvoiceOut(BaseModel):
+    id: int
+    amount: float
+    status: str
+    created_at: datetime
+    patient_name: str
+    treatment_type: str

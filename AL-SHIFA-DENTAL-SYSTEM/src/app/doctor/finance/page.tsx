@@ -2,13 +2,23 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, Download, RefreshCcw, Loader2, FileText } from "lucide-react";
-import api from "@/lib/api";
+import { DollarSign, Download, RefreshCcw, Loader2, FileText, TrendingUp } from "lucide-react";
+import { DoctorAPI } from "@/lib/api";
 import { useRouter } from "next/navigation";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer 
+} from 'recharts';
 
 export default function FinancePage() {
   const router = useRouter();
   const [data, setData] = useState<any>({ total_revenue: 0, total_pending: 0, invoices: [] });
+  const [graphData, setGraphData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchFinance = async () => {
@@ -17,15 +27,31 @@ export default function FinancePage() {
     if (!token) return router.push("/auth/doctor/login");
 
     try {
-      const response = await api.get("/doctor/finance", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await DoctorAPI.getFinance();
       setData(response.data);
+      processGraphData(response.data.invoices);
     } catch (error) {
       console.error("Failed to load finance data", error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const processGraphData = (invoices: any[]) => {
+    // Group by Date
+    const grouped: any = {};
+    invoices.forEach(inv => {
+      const date = inv.date;
+      if (!grouped[date]) grouped[date] = 0;
+      grouped[date] += inv.amount;
+    });
+
+    const chartData = Object.keys(grouped).map(date => ({
+      date: date,
+      revenue: grouped[date]
+    })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    setGraphData(chartData);
   };
 
   useEffect(() => {
@@ -43,7 +69,7 @@ export default function FinancePage() {
       
       {/* Revenue KPI Cards */}
       <div className="grid md:grid-cols-2 gap-6">
-        <Card className="bg-slate-900 text-white shadow-xl">
+        <Card className="bg-slate-900 text-white shadow-xl border-none">
           <CardContent className="pt-6">
              <div className="flex justify-between items-start">
                <div>
@@ -72,12 +98,43 @@ export default function FinancePage() {
         </Card>
       </div>
 
+      {/* REVENUE GRAPH */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-blue-600" /> Revenue Trend
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="h-[300px]">
+          {loading ? (
+            <div className="h-full flex items-center justify-center text-slate-400">Loading Chart...</div>
+          ) : graphData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={graphData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" tick={{fontSize: 12}} />
+                <YAxis tick={{fontSize: 12}} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }}
+                  formatter={(value: number) => [`Rs. ${value}`, 'Revenue']}
+                />
+                <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full flex items-center justify-center text-slate-400 border-2 border-dashed rounded-lg">
+              No revenue data to display yet.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Invoice List */}
       <Card>
-        <CardHeader><CardTitle>Recent Invoices (Agent Memory)</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Invoices</CardTitle></CardHeader>
         <CardContent>
            {loading && data.invoices.length === 0 ? (
-             <div className="text-center py-10"><Loader2 className="h-8 w-8 animate-spin mx-auto text-doctor"/></div>
+             <div className="text-center py-10"><Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600"/></div>
            ) : (
              <table className="w-full text-sm text-left">
                <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-bold">
@@ -94,7 +151,7 @@ export default function FinancePage() {
                <tbody className="divide-y divide-slate-100">
                  {data.invoices.map((inv: any) => (
                    <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
-                     <td className="p-3 font-mono font-medium text-slate-600">{inv.id}</td>
+                     <td className="p-3 font-mono font-medium text-slate-600">INV-{inv.id}</td>
                      <td className="p-3 font-bold text-slate-900">{inv.patient_name}</td>
                      <td className="p-3 text-slate-500">{inv.procedure}</td>
                      <td className="p-3 font-mono">Rs. {inv.amount.toLocaleString()}</td>
@@ -108,7 +165,7 @@ export default function FinancePage() {
                         </span>
                      </td>
                      <td className="p-3 text-slate-400 text-xs">{inv.date}</td>
-                     <td className="p-3"><Download className="h-4 w-4 text-slate-400 cursor-pointer hover:text-doctor" /></td>
+                     <td className="p-3"><Download className="h-4 w-4 text-slate-400 cursor-pointer hover:text-blue-600" /></td>
                    </tr>
                  ))}
                </tbody>

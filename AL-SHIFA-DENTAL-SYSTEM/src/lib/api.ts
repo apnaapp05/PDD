@@ -24,13 +24,10 @@ export const AuthAPI = {
     return api.post("/auth/login", params, { headers: { "Content-Type": "application/x-www-form-urlencoded" } });
   },
   register: async (userData) => api.post("/auth/register", { ...userData, email: userData.email.toLowerCase().trim() }),
-  
-  // FIXED: Changed to accept an object { email, otp } to match how you call it
   verifyOtp: async (data: { email: string; otp: string }) => api.post("/auth/verify-otp", { 
     email: data.email.toLowerCase().trim(), 
     otp: data.otp.trim() 
   }),
-
   getMe: async () => api.get("/auth/me"),
   updateProfile: async (data: { full_name: string; email: string; phone_number: string; address?: string }) => 
     api.put("/auth/profile", data),
@@ -47,17 +44,19 @@ export const OrganizationAPI = {
     api.post("/organization/location-change", data),
   getAppointments: async () => api.get("/organization/appointments"),
   cancelAppointment: async (id: number) => api.put(`/organization/appointments/${id}/cancel`),
+  getInventory: async () => api.get("/organization/inventory"),
 };
 
 export const DoctorAPI = {
   getDashboardStats: async () => api.get("/doctor/dashboard"),
   joinOrganization: async (data: { hospital_id: number; specialization: string; license_number: string }) =>
     api.post("/doctor/join", data),
-  
+  getPatients: async () => api.get("/doctor/patients"),
   getPatientDetails: async (id: number) => api.get(`/doctor/patients/${id}`),
   addMedicalRecord: async (id: number, data: { diagnosis: string; prescription: string; notes: string }) =>
     api.post(`/doctor/patients/${id}/records`, data),
-    
+  
+  // Inventory
   getInventory: async () => api.get("/doctor/inventory"),
   addInventoryItem: async (data: { name: string; quantity: number; unit: string; threshold: number }) => 
     api.post("/doctor/inventory", data),
@@ -65,9 +64,22 @@ export const DoctorAPI = {
   uploadInventory: async (formData: FormData) => 
     api.post("/doctor/inventory/upload", formData, { headers: { "Content-Type": "multipart/form-data" } }),
 
+  // Schedule & Appointments
   getSchedule: async () => api.get("/doctor/schedule"),
   blockSlot: async (data: { date: string; time?: string; reason: string; is_whole_day: boolean }) => 
     api.post("/doctor/schedule/block", data),
+  
+  // Treatment Management
+  getTreatments: async () => api.get("/doctor/treatments"),
+  createTreatment: async (data: { name: string; cost: number; description?: string }) => 
+    api.post("/doctor/treatments", data),
+  linkInventory: async (treatmentId: number, data: { item_id: number; quantity: number }) => 
+    api.post(`/doctor/treatments/${treatmentId}/link-inventory`, data),
+
+  completeAppointment: async (id: number) => api.post(`/doctor/appointments/${id}/complete`),
+
+  // NEW: Finance
+  getFinance: async () => api.get("/doctor/finance"),
 
   getAiInsights: async () => Promise.resolve({ data: [] }), 
 };
