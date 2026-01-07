@@ -34,6 +34,17 @@ export const AuthAPI = {
   getVerifiedHospitals: async () => api.get("/auth/hospitals"),
 };
 
+export const AdminAPI = {
+  getStats: async () => api.get("/admin/stats"),
+  getDoctors: async () => api.get("/admin/doctors"),
+  getOrganizations: async () => api.get("/admin/organizations"),
+  getPatients: async () => api.get("/admin/patients"),
+  approveAccount: async (id: number, type: "doctor" | "organization") => 
+    api.post(`/admin/approve-account/${id}?type=${type}`),
+  deleteEntity: async (id: number, type: "doctor" | "organization" | "patient") => 
+    api.delete(`/admin/delete/${type}/${id}`),
+};
+
 export const OrganizationAPI = {
   getStats: async () => api.get("/organization/stats"),
   getDoctors: async () => api.get("/organization/doctors"),

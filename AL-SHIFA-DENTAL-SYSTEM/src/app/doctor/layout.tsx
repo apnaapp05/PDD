@@ -40,11 +40,13 @@ export default function DoctorLayout({ children }: { children: React.ReactNode }
         const res = await AuthAPI.getMe();
         const name = res.data.full_name || "Doctor";
         setDocName(name);
+        // Safely generate initials
         const init = name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase();
-        setInitials(init);
+        setInitials(init || "DR");
       } catch (error) {
         console.error("Failed to load doctor details", error);
-        router.push("/auth/doctor/login");
+        // Optional: Redirect if unauthorized, or let the middleware handle it
+        // router.push("/auth/doctor/login");
       }
     };
     fetchProfile();

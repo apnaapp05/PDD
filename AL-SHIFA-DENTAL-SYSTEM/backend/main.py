@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI, Depends, HTTPException, status, Request, APIRouter, BackgroundTasks, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -14,6 +15,8 @@ import string
 import csv
 import codecs
 import logging
+import os
+from contextlib import asynccontextmanager
 
 import models
 import database
@@ -26,20 +29,59 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- CONFIG ---
-SECRET_KEY = "alshifa_super_secret_key"
+SECRET_KEY = os.getenv("SECRET_KEY", "alshifa_super_secret_key")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-models.Base.metadata.create_all(bind=database.engine)
-email_service = EmailAdapter()
 
+# Initialize Email Service gracefully
+try:
+    email_service = EmailAdapter()
+except Exception as e:
+    logger.warning(f"Email service failed to initialize: {e}. OTPs will be logged to console only.")
+    email_service = None
+
+# --- DATABASE & STARTUP ---
+def init_db():
+    models.Base.metadata.create_all(bind=database.engine)
+
+def create_default_admin(db: Session):
+    """Ensures a default admin account exists on startup."""
+    admin_email = "admin@system"
+    admin = db.query(models.User).filter(models.User.email == admin_email).first()
+    if not admin:
+        logger.info("Creating default admin account...")
+        pwd_hash = bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        new_admin = models.User(
+            email=admin_email,
+            full_name="System Admin",
+            role="admin",
+            is_email_verified=True,
+            password_hash=pwd_hash
+        )
+        db.add(new_admin)
+        db.commit()
+        logger.info("Default admin created. Login: admin@system / admin123")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    init_db()
+    db = database.SessionLocal()
+    try:
+        create_default_admin(db)
+    finally:
+        db.close()
+    yield
+    # Shutdown (if needed)
+
+# --- UTILS ---
 def get_db():
     db = database.SessionLocal()
     try: yield db
     finally: db.close()
 
-# --- UTILS ---
 def get_password_hash(password: str) -> str:
     try:
         pwd_bytes = password.encode('utf-8')
@@ -81,6 +123,10 @@ doctor_router = APIRouter(prefix="/doctor", tags=["Doctor"])
 public_router = APIRouter(tags=["Public"]) 
 
 # --- PUBLIC ROUTES ---
+@public_router.get("/")
+def health_check():
+    return {"status": "running", "system": "Al-Shifa Dental API"}
+
 @public_router.get("/doctors")
 def get_public_doctors(db: Session = Depends(get_db)):
     doctors = db.query(models.Doctor).filter(models.Doctor.is_verified == True).all()
@@ -113,7 +159,7 @@ def create_appointment(appt: schemas.AppointmentCreate, user: models.User = Depe
         try:
              start_dt = datetime.strptime(f"{appt.date} {appt.time}", "%Y-%m-%d %H:%M")
         except ValueError:
-             raise HTTPException(400, "Invalid date/time format")
+             raise HTTPException(400, "Invalid date/time format. Use YYYY-MM-DD and HH:MM or I:M p")
     
     if start_dt < datetime.now():
         raise HTTPException(400, "Cannot book in the past")
@@ -227,6 +273,17 @@ def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Se
     try:
         otp = generate_otp()
         expires_at = datetime.utcnow() + timedelta(minutes=10)
+        
+        # Safe Email Sending
+        def send_email_safe(email, otp_code):
+            if email_service:
+                try:
+                    email_service.send(email, "Verification", f"OTP: {otp_code}")
+                except Exception as e:
+                    logger.error(f"Failed to send email to {email}: {e}")
+            else:
+                logger.info(f"EMAIL SERVICE NOT CONFIGURED. OTP for {email}: {otp_code}")
+
         if existing_unverified:
             if existing_unverified.otp_expires_at and existing_unverified.otp_expires_at > datetime.utcnow():
                 logger.info(f"IDEMPOTENCY: Reusing existing OTP for {email_clean}")
@@ -249,51 +306,143 @@ def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Se
                 if not hospital: db.rollback(); raise HTTPException(400, "Hospital not found")
                 db.add(models.Doctor(user_id=new_user.id, hospital_id=hospital.id, specialization=user.specialization, license_number=user.license_number, is_verified=False))
             db.commit()
-        logger.info(f"REGISTER SUCCESS | Email: {email_clean} | OTP Saved: {otp}")
-        background_tasks.add_task(email_service.send, email_clean, "Verification", f"OTP: {otp}")
+        
+        logger.info(f"REGISTER SUCCESS | Email: {email_clean} | OTP Generated")
+        background_tasks.add_task(send_email_safe, email_clean, otp)
         return {"message": "OTP sent", "email": email_clean}
-    except Exception as e: db.rollback(); logger.error(f"Registration Error: {str(e)}"); raise HTTPException(500, f"Error: {str(e)}")
+    except Exception as e: 
+        db.rollback()
+        logger.error(f"Registration Error: {str(e)}")
+        raise HTTPException(500, f"Error: {str(e)}")
 
 @auth_router.post("/verify-otp")
 def verify_otp(data: schemas.VerifyOTP, db: Session = Depends(get_db)):
     email_clean = data.email.lower().strip()
     user = db.query(models.User).filter(models.User.email == email_clean).first()
     if not user: raise HTTPException(400, "User not found")
-    if user.is_email_verified: return {"message": "Already verified", "status": "active", "role": user.role}
+    
+    # If already verified, just return success
+    if user.is_email_verified: 
+        return {"message": "Already verified", "status": "active", "role": user.role}
+        
     if user.otp_expires_at and datetime.utcnow() > user.otp_expires_at: raise HTTPException(400, "OTP has expired. Please register again.")
-    if str(user.otp_code).strip() != str(data.otp.strip()): raise HTTPException(400, "Invalid OTP code")
-    user.is_email_verified = True; user.otp_code = None; db.commit()
+    
+    # Check OTP (Loose check for string/int differences)
+    if str(user.otp_code).strip() != str(data.otp.strip()): 
+        raise HTTPException(400, "Invalid OTP code")
+        
+    user.is_email_verified = True
+    user.otp_code = None
+    db.commit()
     return {"message": "Verified", "status": "active", "role": user.role}
 
 @auth_router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     username = form_data.username.lower().strip()
-    if username == "myapp" and form_data.password == "asdf":
-        admin = db.query(models.User).filter(models.User.email == "admin@system").first()
-        if not admin: admin = models.User(email="admin@system", full_name="Admin", role="admin", is_email_verified=True, password_hash=get_password_hash("asdf")); db.add(admin); db.commit(); db.refresh(admin)
-        return {"access_token": create_access_token({"sub": str(admin.id), "role": "admin"}), "token_type": "bearer", "role": "admin"}
     user = db.query(models.User).filter(models.User.email == username).first()
-    if not user or not verify_password(form_data.password, user.password_hash): raise HTTPException(403, "Invalid Credentials")
-    if not user.is_email_verified: raise HTTPException(403, "Email not verified")
+    
+    if not user or not verify_password(form_data.password, user.password_hash): 
+        raise HTTPException(403, "Invalid Credentials")
+    
+    if not user.is_email_verified: 
+        raise HTTPException(403, "Email not verified")
+        
     if user.role == "organization":
         h = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
         if h and not h.is_verified: raise HTTPException(403, "Account pending approval")
+    
     if user.role == "doctor":
         d = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
         if d and not d.is_verified: raise HTTPException(403, "Account pending approval")
+        
     return {"access_token": create_access_token({"sub": str(user.id), "role": user.role}), "token_type": "bearer", "role": user.role}
 
 # --- ADMIN ROUTES ---
-@admin_router.get("/pending-verifications")
-def get_pending(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+@admin_router.get("/stats")
+def get_admin_stats(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "admin": raise HTTPException(403, "Admin only")
-    hospitals = db.query(models.Hospital).filter(or_(models.Hospital.is_verified == False, models.Hospital.pending_address != None)).all()
-    doctors = db.query(models.Doctor).filter(models.Doctor.is_verified == False).all()
-    payload = []
-    for h in hospitals: payload.append({"id": h.id, "name": h.name, "type": "organization", "detail": h.pending_address or h.address})
-    for d in doctors: payload.append({"id": d.id, "name": d.user.full_name, "type": "doctor", "detail": d.specialization})
-    return {"pending": payload}
+    return {
+        "doctors": db.query(models.Doctor).count(),
+        "patients": db.query(models.Patient).count(),
+        "organizations": db.query(models.Hospital).count(),
+        "revenue": 0 # Placeholder for platform revenue
+    }
 
+@admin_router.get("/doctors")
+def get_all_doctors(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "admin": raise HTTPException(403, "Admin only")
+    doctors = db.query(models.Doctor).all()
+    return [{
+        "id": d.id, 
+        "name": d.user.full_name if d.user else "Unknown",
+        "email": d.user.email if d.user else "", 
+        "specialization": d.specialization, 
+        "license": d.license_number, 
+        "is_verified": d.is_verified,
+        "hospital_name": d.hospital.name if d.hospital else "N/A"
+    } for d in doctors]
+
+@admin_router.get("/organizations")
+def get_all_organizations(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "admin": raise HTTPException(403, "Admin only")
+    orgs = db.query(models.Hospital).all()
+    return [{
+        "id": h.id, 
+        "name": h.name, 
+        "address": h.address, 
+        "owner_email": h.owner.email if h.owner else "",
+        "is_verified": h.is_verified,
+        "doctor_count": len(h.doctors)
+    } for h in orgs]
+
+@admin_router.get("/patients")
+def get_all_patients(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "admin": raise HTTPException(403, "Admin only")
+    patients = db.query(models.Patient).all()
+    return [{
+        "id": p.id,
+        "name": p.user.full_name if p.user else "Unknown",
+        "email": p.user.email if p.user else "",
+        "age": p.age,
+        "gender": p.gender,
+        "created_at": p.user.created_at.strftime("%Y-%m-%d") if p.user else "N/A"
+    } for p in patients]
+
+@admin_router.delete("/delete/{type}/{id}")
+def delete_entity(type: str, id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "admin": raise HTTPException(403, "Admin only")
+    
+    try:
+        if type == "doctor":
+            record = db.query(models.Doctor).filter(models.Doctor.id == id).first()
+            if not record: raise HTTPException(404, "Doctor not found")
+            user_account = record.user
+            db.delete(record) # Delete profile
+            if user_account: db.delete(user_account) # Delete login
+            
+        elif type == "organization":
+            record = db.query(models.Hospital).filter(models.Hospital.id == id).first()
+            if not record: raise HTTPException(404, "Organization not found")
+            user_account = record.owner
+            db.delete(record)
+            if user_account: db.delete(user_account)
+            
+        elif type == "patient":
+            record = db.query(models.Patient).filter(models.Patient.id == id).first()
+            if not record: raise HTTPException(404, "Patient not found")
+            user_account = record.user
+            db.delete(record)
+            if user_account: db.delete(user_account)
+            
+        else: raise HTTPException(400, "Invalid type")
+        
+        db.commit()
+        return {"message": "Deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Delete failed: {str(e)}")
+
+# Keep existing approve endpoint
 @admin_router.post("/approve-account/{entity_id}")
 def approve_account(entity_id: int, type: str = Query(...), user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "admin": raise HTTPException(403, "Admin only")
@@ -305,17 +454,6 @@ def approve_account(entity_id: int, type: str = Query(...), user: models.User = 
     elif type == "doctor":
         d = db.query(models.Doctor).filter(models.Doctor.id == entity_id).first(); 
         if d: d.is_verified = True; db.commit(); return {"message": "Approved"}
-    raise HTTPException(404, "Not found")
-
-@admin_router.post("/reject-account/{entity_id}")
-def reject_account(entity_id: int, type: str = Query(...), user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if user.role != "admin": raise HTTPException(403, "Admin only")
-    if type == "organization":
-        h = db.query(models.Hospital).filter(models.Hospital.id == entity_id).first()
-        if h: db.delete(h); db.commit(); return {"message": "Rejected"}
-    elif type == "doctor":
-        d = db.query(models.Doctor).filter(models.Doctor.id == entity_id).first()
-        if d: db.delete(d); db.commit(); return {"message": "Rejected"}
     raise HTTPException(404, "Not found")
 
 # --- ORGANIZATION ROUTES ---
@@ -699,7 +837,7 @@ def update_case(case_id: int, data: schemas.CaseUpdate, user: models.User = Depe
     db.commit()
     return {"message": "Case updated"}
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(agent_router)
 app.include_router(auth_router)
@@ -707,3 +845,7 @@ app.include_router(admin_router)
 app.include_router(org_router)
 app.include_router(doctor_router)
 app.include_router(public_router)
+
+# Mount media directory for uploads if needed
+os.makedirs("media", exist_ok=True)
+app.mount("/media", StaticFiles(directory="media"), name="media")

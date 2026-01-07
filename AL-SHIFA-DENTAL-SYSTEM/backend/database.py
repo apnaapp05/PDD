@@ -2,9 +2,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from config import DATABASE_URL
 
-# Create the engine using the configuration
-# We removed "check_same_thread" as it is only for SQLite
-engine = create_engine(DATABASE_URL)
+# Determine if we are using SQLite
+is_sqlite = DATABASE_URL.startswith("sqlite")
+
+# Create the engine with appropriate arguments
+connect_args = {"check_same_thread": False} if is_sqlite else {}
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
