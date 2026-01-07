@@ -56,6 +56,7 @@ class Doctor(Base):
     hospital = relationship("Hospital", back_populates="doctors")
     appointments = relationship("Appointment", back_populates="doctor")
     medical_records = relationship("MedicalRecord", back_populates="doctor")
+    cases = relationship("ClinicalCase", back_populates="doctor")
 
 class Patient(Base):
     __tablename__ = "patients"
@@ -68,6 +69,7 @@ class Patient(Base):
     appointments = relationship("Appointment", back_populates="patient")
     medical_records = relationship("MedicalRecord", back_populates="patient")
     invoices = relationship("Invoice", back_populates="patient")
+    cases = relationship("ClinicalCase", back_populates="patient")
 
 class InventoryItem(Base):
     __tablename__ = "inventory"
@@ -83,7 +85,7 @@ class InventoryItem(Base):
     # Link to Treatment Requirements
     treatment_links = relationship("TreatmentInventoryLink", back_populates="item")
 
-# --- NEW: Treatment Catalog (The "Menu" of Services) ---
+# --- Treatment Catalog (The "Menu" of Services) ---
 class Treatment(Base):
     __tablename__ = "treatments"
     id = Column(Integer, primary_key=True, index=True)
@@ -95,7 +97,7 @@ class Treatment(Base):
     hospital = relationship("Hospital", back_populates="treatments")
     required_items = relationship("TreatmentInventoryLink", back_populates="treatment")
 
-# --- NEW: The "Recipe" (Link Treatment -> Inventory) ---
+# --- The "Recipe" (Link Treatment -> Inventory) ---
 class TreatmentInventoryLink(Base):
     __tablename__ = "treatment_inventory_links"
     id = Column(Integer, primary_key=True, index=True)
@@ -134,7 +136,7 @@ class MedicalRecord(Base):
     patient = relationship("Patient", back_populates="medical_records")
     doctor = relationship("Doctor", back_populates="medical_records")
 
-# --- NEW: Invoice System ---
+# --- Invoice System ---
 class Invoice(Base):
     __tablename__ = "invoices"
     id = Column(Integer, primary_key=True, index=True)
@@ -146,3 +148,19 @@ class Invoice(Base):
 
     appointment = relationship("Appointment", back_populates="invoice")
     patient = relationship("Patient", back_populates="invoices")
+
+# --- NEW: Clinical Case Tracking ---
+# FIX: Inherit from Base (SQLAlchemy), NOT BaseModel (Pydantic)
+class ClinicalCase(Base): 
+    __tablename__ = "clinical_cases"
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(Integer, ForeignKey("patients.id"))
+    doctor_id = Column(Integer, ForeignKey("doctors.id"))
+    title = Column(String) # e.g. "Ceramic Crown Tooth 14"
+    stage = Column(String) # e.g. "Impression Taken", "Lab Processing"
+    status = Column(String, default="Active") # Active, Completed
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    patient = relationship("Patient", back_populates="cases")
+    doctor = relationship("Doctor", back_populates="cases")

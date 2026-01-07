@@ -396,7 +396,6 @@ def get_org_inventory(user: models.User = Depends(get_current_user), db: Session
     return db.query(models.InventoryItem).filter(models.InventoryItem.hospital_id == hospital.id).all()
 
 # --- DOCTOR ROUTES ---
-# MOVED HERE: Treatment Management for Doctors
 @doctor_router.post("/treatments")
 def create_treatment(data: schemas.TreatmentCreate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "doctor": raise HTTPException(403, "Access denied")
@@ -483,7 +482,6 @@ def get_doctor_dashboard(user: models.User = Depends(get_current_user), db: Sess
 
     return {"account_status": "active", "today_count": len(todays_appointments), "total_patients": db.query(models.Appointment.patient_id).filter(models.Appointment.doctor_id == doctor.id).distinct().count(), "revenue": revenue, "appointments": appt_list}
 
-# --- NEW: FINANCE ENDPOINT ---
 @doctor_router.get("/finance")
 def get_doctor_finance(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "doctor": raise HTTPException(403, "Access denied")
@@ -499,7 +497,6 @@ def get_doctor_finance(user: models.User = Depends(get_current_user), db: Sessio
     for inv in invoices:
         pat = db.query(models.Patient).filter(models.Patient.id == inv.patient_id).first()
         pat_name = pat.user.full_name if pat and pat.user else "Unknown"
-        
         appt = db.query(models.Appointment).filter(models.Appointment.id == inv.appointment_id).first()
         treatment = appt.treatment_type if appt else "N/A"
 
@@ -512,16 +509,10 @@ def get_doctor_finance(user: models.User = Depends(get_current_user), db: Sessio
             "date": inv.created_at.strftime("%Y-%m-%d")
         })
 
-        if inv.status.lower() == "paid":
-            total_paid += inv.amount
-        else:
-            total_pending += inv.amount # Default created is 'pending'
+        if inv.status.lower() == "paid": total_paid += inv.amount
+        else: total_pending += inv.amount
 
-    return {
-        "total_revenue": total_paid,
-        "total_pending": total_pending,
-        "invoices": formatted_invoices
-    }
+    return { "total_revenue": total_paid, "total_pending": total_pending, "invoices": formatted_invoices }
 
 @doctor_router.post("/appointments/{id}/complete")
 def complete_appointment(id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -657,6 +648,56 @@ def update_inventory_qty(item_id: int, data: schemas.InventoryUpdate, user: mode
     item.last_updated = datetime.utcnow()
     db.commit()
     return {"message": "Updated", "new_quantity": item.quantity}
+
+# --- NEW: CLINICAL CASE MANAGEMENT ---
+@doctor_router.post("/cases")
+def create_case(data: schemas.CaseCreate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "doctor": raise HTTPException(403, "Access denied")
+    doctor = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
+    
+    new_case = models.ClinicalCase(
+        patient_id=data.patient_id,
+        doctor_id=doctor.id,
+        title=data.title,
+        stage=data.stage,
+        status="Active"
+    )
+    db.add(new_case); db.commit(); db.refresh(new_case)
+    return new_case
+
+@doctor_router.get("/cases")
+def get_cases(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "doctor": raise HTTPException(403, "Access denied")
+    doctor = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
+    
+    cases = db.query(models.ClinicalCase).filter(models.ClinicalCase.doctor_id == doctor.id).all()
+    
+    results = []
+    for c in cases:
+        pat = db.query(models.Patient).filter(models.Patient.id == c.patient_id).first()
+        results.append({
+            "id": c.id,
+            "title": c.title,
+            "stage": c.stage,
+            "status": c.status,
+            "updated_at": c.updated_at,
+            "patient_name": pat.user.full_name if pat and pat.user else "Unknown"
+        })
+    return results
+
+@doctor_router.put("/cases/{case_id}")
+def update_case(case_id: int, data: schemas.CaseUpdate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "doctor": raise HTTPException(403, "Access denied")
+    doctor = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
+    
+    c = db.query(models.ClinicalCase).filter(models.ClinicalCase.id == case_id, models.ClinicalCase.doctor_id == doctor.id).first()
+    if not c: raise HTTPException(404, "Case not found")
+    
+    c.stage = data.stage
+    if data.status: c.status = data.status
+    c.updated_at = datetime.utcnow()
+    db.commit()
+    return {"message": "Case updated"}
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])

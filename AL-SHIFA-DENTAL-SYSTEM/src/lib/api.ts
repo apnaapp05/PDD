@@ -78,8 +78,11 @@ export const DoctorAPI = {
 
   completeAppointment: async (id: number) => api.post(`/doctor/appointments/${id}/complete`),
 
-  // NEW: Finance
   getFinance: async () => api.get("/doctor/finance"),
+
+  // NEW: Agent Chat
+  chatWithAgent: async (data: { agent_type: string; user_query: string; role: string }) =>
+    api.post("/agent/router", data),
 
   getAiInsights: async () => Promise.resolve({ data: [] }), 
 };

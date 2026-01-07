@@ -7,12 +7,13 @@ import {
   LayoutDashboard, 
   Users, 
   Package, 
-  Stethoscope, // Added Icon
+  Stethoscope, 
   CreditCard,
   LogOut, 
   Menu, 
   X,
-  Calendar
+  Calendar,
+  Bot // Added Icon for AI Agents
 } from "lucide-react";
 import { AuthAPI } from "@/lib/api";
 
@@ -59,10 +60,10 @@ export default function DoctorLayout({ children }: { children: React.ReactNode }
 
   const navItems = [
     { label: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
+    { label: "AI Agents", href: "/doctor/agents", icon: Bot }, // NEW LINK ADDED HERE
     { label: "My Schedule", href: "/doctor/schedule", icon: Calendar },
     { label: "My Patients", href: "/doctor/patients", icon: Users },
     { label: "Inventory", href: "/doctor/inventory", icon: Package },
-    // NEW LINK ADDED HERE
     { label: "Treatments & Prices", href: "/doctor/treatments", icon: Stethoscope },
     { label: "Financials", href: "/doctor/finance", icon: CreditCard },
   ];

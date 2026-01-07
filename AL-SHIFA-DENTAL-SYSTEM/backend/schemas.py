@@ -1,4 +1,3 @@
-# backend/schemas.py
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -10,8 +9,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
     full_name: str
-    role: str # organization, doctor, patient
-    # Optional fields for profile creation
+    role: str 
     hospital_name: Optional[str] = None
     address: Optional[str] = None
     pincode: Optional[str] = None
@@ -21,7 +19,6 @@ class UserCreate(UserBase):
     gender: Optional[str] = None
     specialization: Optional[str] = None
     license_number: Optional[str] = None
-    # For doctor scheduling (optional)
     scheduling_config: Optional[dict] = None
 
 class UserOut(UserBase):
@@ -88,7 +85,7 @@ class RecordCreate(BaseModel):
     prescription: str
     notes: str
 
-# --- TREATMENTS (THE "MENU") ---
+# --- TREATMENTS ---
 class TreatmentCreate(BaseModel):
     name: str
     cost: float
@@ -98,7 +95,6 @@ class TreatmentLinkCreate(BaseModel):
     item_id: int
     quantity: int
 
-# Helpers for nesting
 class InventoryItemRef(BaseModel):
     name: str
     unit: str
@@ -128,3 +124,23 @@ class InvoiceOut(BaseModel):
     created_at: datetime
     patient_name: str
     treatment_type: str
+
+# --- NEW: CLINICAL CASES ---
+class CaseCreate(BaseModel):
+    patient_id: int
+    title: str
+    stage: str
+
+class CaseUpdate(BaseModel):
+    stage: str
+    status: Optional[str] = None
+
+class CaseOut(BaseModel):
+    id: int
+    title: str
+    stage: str
+    status: str
+    updated_at: datetime
+    patient_name: str
+    class Config:
+        orm_mode = True
