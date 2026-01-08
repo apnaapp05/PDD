@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Plus, Link as LinkIcon, AlertCircle, Loader2, Pill } from "lucide-react";
 import { DoctorAPI } from "@/lib/api";
+import SmartAssistant from "@/components/chat/SmartAssistant"; 
 
 const SimpleSelect = ({ value, onChange, options, placeholder }: any) => (
   <select 
@@ -87,8 +88,15 @@ export default function DoctorTreatmentManager() {
 
   if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin" /></div>;
 
+  // --- PREPARE CONTEXT FOR AI ---
+  const treatmentContext = {
+    total_treatments: treatments.length,
+    treatment_names: treatments.map(t => t.name).join(", "),
+    items_linked_count: treatments.filter(t => t.required_items?.length > 0).length
+  };
+
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-6 max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Treatment Catalog</h1>
@@ -100,7 +108,7 @@ export default function DoctorTreatmentManager() {
       </div>
 
       {isCreating && (
-        <Card className="bg-indigo-50 border-indigo-100">
+        <Card className="bg-indigo-50 border-indigo-100 animate-in slide-in-from-top-4">
           <CardHeader>
             <CardTitle>Create New Service</CardTitle>
           </CardHeader>
@@ -204,6 +212,13 @@ export default function DoctorTreatmentManager() {
            </div>
         )}
       </div>
+
+      {/* 🟣 SMART ASSISTANT WITH TREATMENT CONTEXT */}
+      <SmartAssistant 
+        role="doctor" 
+        pageName="Treatment Catalog" 
+        pageContext={treatmentContext} 
+      />
     </div>
   );
 }

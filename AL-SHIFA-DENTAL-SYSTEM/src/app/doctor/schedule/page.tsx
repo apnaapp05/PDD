@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, Calendar, Clock, Loader2, RefreshCcw, Lock, X } from "lucide-react";
 import { DoctorAPI } from "@/lib/api";
 import { useRouter } from "next/navigation";
+import SmartAssistant from "@/components/chat/SmartAssistant";
 
 export default function SchedulePage() {
   const router = useRouter();
@@ -62,22 +63,27 @@ export default function SchedulePage() {
     const todayStr = new Date().toISOString().split('T')[0];
     
     return appointments.find(a => {
-      // Check for exact slot match on this day
       const isExactMatch = a.date === todayStr && a.time === time;
-      
-      // Check for whole day block on this day
-      // A whole day block usually has status='blocked' and covers the whole range
-      // We identify it by checking if start and end cover the whole day
-      // Or simply, the API returns it with start/end ISO times.
-      // Heuristic: If it's a "Blocked" status appointment on today, check if it covers the whole day.
       const isWholeDay = a.status === 'blocked' && a.date === todayStr && a.type === "Full Day Leave";
-      
       return isExactMatch || isWholeDay;
     });
   };
 
+  // --- PREPARE CONTEXT FOR AI ---
+  const today = new Date().toISOString().split('T')[0];
+  const scheduleContext = {
+    today_date: today,
+    total_appointments: appointments.length,
+    today_count: appointments.filter(a => a.date === today && a.status !== 'blocked').length,
+    blocked_slots: appointments.filter(a => a.status === 'blocked').length,
+    upcoming_summary: appointments
+        .filter(a => new Date(a.date) > new Date())
+        .slice(0, 5)
+        .map(a => `${a.date} ${a.time}: ${a.patient_name} (${a.type})`)
+  };
+
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-6 relative animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Weekly Schedule</h1>
         <div className="flex gap-2">
@@ -237,6 +243,13 @@ export default function SchedulePage() {
             </CardContent>
         </Card>
       </div>
+
+      {/* 🟣 SMART ASSISTANT WITH SCHEDULE CONTEXT */}
+      <SmartAssistant 
+        role="doctor" 
+        pageName="Schedule" 
+        pageContext={scheduleContext} 
+      />
     </div>
   );
 }

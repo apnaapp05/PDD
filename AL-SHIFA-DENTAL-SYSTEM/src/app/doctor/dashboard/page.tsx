@@ -1,68 +1,35 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  Users, 
-  DollarSign, 
-  Calendar, 
-  Package, 
-  PlayCircle, 
-  CheckCircle2, 
-  Clock, 
-  AlertTriangle, 
-  RefreshCcw, 
-  Stethoscope, 
-  ChevronRight,
-  TrendingUp 
-} from "lucide-react";
-import { DoctorAPI, AuthAPI } from "@/lib/api";
+import api from "@/lib/api";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { 
+  Users, Calendar, TrendingUp, Clock, 
+  ChevronRight, RefreshCcw, Loader2, Sparkles, AlertTriangle
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import SmartAssistant from "@/components/chat/SmartAssistant"; 
 
 export default function DoctorDashboard() {
   const router = useRouter();
   const [stats, setStats] = useState<any>(null);
-  const [inventoryCount, setInventoryCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Join Organization State
-  const [hospitals, setHospitals] = useState<any[]>([]);
-  const [joinForm, setJoinForm] = useState({
-    hospital_id: "",
-    specialization: "",
-    license_number: ""
-  });
-
+  // 1. Live Data Fetching
   const fetchDashboard = async () => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      router.push("/auth/doctor/login");
-      return;
-    }
-
     try {
-      setLoading(true);
-      // Fetch Dashboard Stats AND Inventory Count in parallel
-      const [dashboardRes, inventoryRes] = await Promise.all([
-        DoctorAPI.getDashboardStats(),
-        DoctorAPI.getInventory().catch(() => ({ data: [] })) // Fail safe
-      ]);
-
-      setStats(dashboardRes.data);
-      setInventoryCount(inventoryRes.data.length || 0);
-      
-      // If no profile, fetch hospitals
-      if (dashboardRes.data.account_status === "no_profile") {
-         const hospRes = await AuthAPI.getVerifiedHospitals();
-         setHospitals(hospRes.data);
-      }
-
-    } catch (error) {
-      console.error("Failed to fetch dashboard", error);
+      setRefreshing(true);
+      const res = await api.get("/doctor/dashboard");
+      setStats(res.data);
+    } catch (e) {
+      console.error("Failed to fetch dashboard", e);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -70,316 +37,212 @@ export default function DoctorDashboard() {
     fetchDashboard();
   }, []);
 
-  const handleJoin = async () => {
-    if(!joinForm.hospital_id || !joinForm.specialization || !joinForm.license_number) {
-      alert("Please fill all fields");
-      return;
-    }
-    try {
-      setLoading(true);
-      await DoctorAPI.joinOrganization({
-        hospital_id: parseInt(joinForm.hospital_id),
-        specialization: joinForm.specialization,
-        license_number: joinForm.license_number
-      });
-      alert("Request Sent! Please wait for the organization to approve you.");
-      fetchDashboard();
-    } catch (error) {
-      alert("Failed to send request.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleComplete = async (apptId: number, e: React.MouseEvent) => {
-    e.stopPropagation(); 
-    if(!confirm("Mark appointment as complete? This will generate a bill and deduct inventory.")) return;
-    try {
-      const res = await DoctorAPI.completeAppointment(apptId);
-      alert(res.data.details.join("\n")); 
-      fetchDashboard(); 
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to complete");
-    }
-  };
-
-  if (loading) return (
-    <div className="flex h-screen items-center justify-center">
-      <RefreshCcw className="h-8 w-8 animate-spin text-blue-600" />
-    </div>
-  );
-
-  // --- STATE: NO PROFILE (Show Join Form) ---
-  if (stats?.account_status === "no_profile") {
+  if (loading) {
     return (
-      <div className="max-w-2xl mx-auto space-y-6 mt-10 p-6">
-        <Card className="border-l-4 border-l-yellow-500 shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-yellow-700">
-              <AlertTriangle className="h-6 w-6" /> Action Required: Join an Organization
+      <div className="flex h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+      </div>
+    );
+  }
+
+  // Safe Accessors
+  const appointmentList = stats?.schedule || [];
+  const revenueDisplay = stats?.monthly_revenue || 0;
+  const patientCount = stats?.total_patients || 0;
+  const nextApptTime = stats?.next_appointment || "None";
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 font-sans">
+      
+      {/* HEADER & ACTIONS */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight text-slate-900">
+            Welcome back, {stats?.doctor_name || "Doctor"}
+          </h1>
+          <p className="text-slate-500 mt-1 flex items-center gap-2">
+            You have <span className="font-bold text-emerald-600">{stats?.today_count || 0} appointments</span> today.
+          </p>
+        </div>
+        <div className="flex gap-3">
+           <Button 
+             variant="outline" 
+             size="sm" 
+             onClick={fetchDashboard} 
+             disabled={refreshing}
+             className="border-slate-200 text-slate-600 hover:bg-slate-50"
+           >
+             <RefreshCcw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+             Refresh
+           </Button>
+           <Link href="/doctor/schedule">
+             <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20">
+               View Full Calendar
+             </Button>
+           </Link>
+        </div>
+      </div>
+
+      {/* KPI CARDS */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="border-l-4 border-l-emerald-500 shadow-sm hover:shadow-md transition-all bg-white">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Est. Revenue</p>
+                <h3 className="text-3xl font-black text-slate-900 mt-2">
+                  {new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' }).format(revenueDisplay)}
+                </h3>
+              </div>
+              <div className="h-12 w-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
+                <TrendingUp size={24} />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-4 font-medium flex items-center gap-1">
+               <span className="text-emerald-600">↑ 5%</span> from last month
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-all bg-white">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Patients</p>
+                <h3 className="text-3xl font-black text-slate-900 mt-2">
+                  {patientCount}
+                </h3>
+              </div>
+              <div className="h-12 w-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
+                <Users size={24} />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-4">Active care plans</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-amber-500 shadow-sm hover:shadow-md transition-all bg-white">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Next Patient</p>
+                <h3 className="text-3xl font-black text-slate-900 mt-2">
+                  {nextApptTime}
+                </h3>
+              </div>
+              <div className="h-12 w-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600">
+                <Clock size={24} />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-4">Check patient notes</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* MAIN CONTENT GRID */}
+      <div className="grid gap-6 md:grid-cols-7">
+        <Card className="md:col-span-4 border-slate-200 shadow-sm overflow-hidden h-fit bg-white">
+          <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+            <CardTitle className="text-lg flex items-center gap-2 text-slate-800">
+              <Calendar className="w-5 h-5 text-slate-500" />
+              Today's Schedule
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-slate-600">Please select a hospital to join to start practicing.</p>
-            <div className="space-y-4 bg-slate-50 p-6 rounded-lg border border-slate-100">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Select Hospital</label>
-                <select 
-                  className="w-full h-10 rounded-md border border-slate-300 px-3 bg-white"
-                  onChange={(e) => setJoinForm({...joinForm, hospital_id: e.target.value})}
-                >
-                  <option value="">-- Choose Hospital --</option>
-                  {hospitals.map(h => (
-                    <option key={h.id} value={h.id}>{h.name} ({h.address})</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Your Specialization</label>
-                <div className="relative">
-                   <Stethoscope className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                   <Input 
-                      className="pl-10" 
-                      placeholder="e.g. Orthodontist" 
-                      value={joinForm.specialization}
-                      onChange={(e) => setJoinForm({...joinForm, specialization: e.target.value})}
-                   />
+          <div className="divide-y divide-slate-100">
+            {appointmentList.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 flex flex-col items-center gap-2">
+                <div className="h-14 w-14 bg-slate-50 rounded-full flex items-center justify-center mb-2">
+                    <Calendar className="h-6 w-6 text-slate-300" />
                 </div>
+                <p>No appointments for today. Enjoy your break! ☕</p>
+                <Link href="/doctor/schedule">
+                    <Button variant="link" className="text-emerald-600 font-bold">Check Full Calendar</Button>
+                </Link>
               </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">License Number</label>
-                <Input 
-                    placeholder="e.g. PMDC-12345" 
-                    value={joinForm.license_number}
-                    onChange={(e) => setJoinForm({...joinForm, license_number: e.target.value})}
-                 />
-              </div>
-              <Button onClick={handleJoin} className="w-full bg-blue-600 hover:bg-blue-700 mt-2">Submit Request</Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // --- STATE: PENDING APPROVAL ---
-  if (stats?.account_status === "pending") {
-    return (
-      <div className="max-w-2xl mx-auto mt-20 text-center space-y-6 p-6">
-        <div className="h-24 w-24 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center mx-auto animate-pulse">
-          <Clock className="h-12 w-12" />
-        </div>
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Verification Pending</h1>
-          <p className="text-slate-500 mt-2">Your request has been sent to the hospital administrator.<br/>Please wait for their approval.</p>
-        </div>
-        <Button variant="outline" onClick={fetchDashboard} className="gap-2">
-          <RefreshCcw className="h-4 w-4" /> Check Status
-        </Button>
-      </div>
-    );
-  }
-
-  // --- STATE: ACTIVE DASHBOARD ---
-  return (
-    <div className="space-y-8 p-1">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Medical Dashboard</h1>
-          <p className="text-slate-500">Welcome back, Dr. {stats.doctor_name || "Doctor"}</p>
-        </div>
-        <Button variant="ghost" onClick={fetchDashboard} className="gap-2 text-blue-600 hover:bg-blue-50">
-          <RefreshCcw className="h-4 w-4" /> Refresh
-        </Button>
-      </div>
-      
-      {/* 1. INTERACTIVE STATS CARDS */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        
-        {/* Appointments Card */}
-        <Card 
-          onClick={() => router.push("/doctor/schedule")}
-          className="border-l-4 border-l-blue-600 shadow-sm hover:shadow-lg transition-all cursor-pointer group bg-white"
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600 group-hover:text-blue-700">Appointments</CardTitle>
-            <Calendar className="h-4 w-4 text-blue-600 group-hover:scale-110 transition-transform" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-slate-900">{stats.today_count}</div>
-            <p className="text-xs text-slate-500 mt-1">Scheduled for today</p>
-          </CardContent>
-        </Card>
-
-        {/* Patients Card */}
-        <Card 
-          onClick={() => router.push("/doctor/patients")}
-          className="border-l-4 border-l-purple-500 shadow-sm hover:shadow-lg transition-all cursor-pointer group bg-white"
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600 group-hover:text-purple-700">My Patients</CardTitle>
-            <Users className="h-4 w-4 text-purple-600 group-hover:scale-110 transition-transform" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-slate-900">{stats.total_patients}</div>
-            <p className="text-xs text-slate-500 mt-1">Total unique records</p>
-          </CardContent>
-        </Card>
-
-        {/* Revenue Card */}
-        <Card 
-          onClick={() => router.push("/doctor/finance")}
-          className="border-l-4 border-l-green-500 shadow-sm hover:shadow-lg transition-all cursor-pointer group bg-white"
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600 group-hover:text-green-700">Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-green-600 group-hover:scale-110 transition-transform" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-slate-900">${stats.revenue}</div>
-            <p className="text-xs text-slate-500 mt-1">Generated this month</p>
-          </CardContent>
-        </Card>
-
-        {/* Inventory Card */}
-        <Card 
-          onClick={() => router.push("/doctor/inventory")}
-          className="border-l-4 border-l-orange-500 shadow-sm hover:shadow-lg transition-all cursor-pointer group bg-white"
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600 group-hover:text-orange-700">Inventory</CardTitle>
-            <Package className="h-4 w-4 text-orange-600 group-hover:scale-110 transition-transform" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-slate-900">{inventoryCount}</div>
-            <p className="text-xs text-slate-500 mt-1">Items in stock</p>
-          </CardContent>
-        </Card>
-
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
-        
-        {/* 2. TODAY'S SCHEDULE LIST */}
-        <Card className="col-span-4 shadow-md bg-white border border-slate-200">
-          <CardHeader className="border-b border-slate-100 bg-slate-50/50">
-            <div className="flex justify-between items-center">
-              <CardTitle className="flex items-center gap-2 text-slate-800">
-                <Clock className="h-5 w-5 text-blue-600" /> Today's Schedule
-              </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => router.push("/doctor/schedule")}>View All <ChevronRight className="h-4 w-4 ml-1"/></Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-slate-100">
-              {stats.appointments.length === 0 ? (
-                <div className="p-10 text-center text-slate-500 flex flex-col items-center">
-                  <Calendar className="h-10 w-10 text-slate-300 mb-2" />
-                  <p>No appointments scheduled for today.</p>
-                </div>
-              ) : (
-                stats.appointments.map((appt: any, i: number) => (
-                  <div 
-                    key={i} 
-                    onClick={() => router.push(`/doctor/patients/${appt.id}`)}
-                    className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors cursor-pointer group"
-                  >
+            ) : (
+              appointmentList.map((appt: any, i: number) => {
+                const [timeVal, timeMeridiem] = appt.time ? appt.time.split(' ') : ["--:--", ""];
+                return (
+                  <div key={i} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors group cursor-pointer">
                     <div className="flex items-center gap-4">
-                      <div className={`h-12 w-12 rounded-full flex items-center justify-center font-bold text-lg border transition-colors ${
-                        appt.status === 'completed' 
-                          ? 'bg-green-100 text-green-600 border-green-200' 
-                          : 'bg-blue-50 text-blue-600 border-blue-100 group-hover:bg-blue-600 group-hover:text-white'
-                      }`}>
-                        {appt.patient_name ? appt.patient_name.charAt(0) : 'U'}
+                      <div className="h-12 w-14 rounded-lg bg-white flex flex-col items-center justify-center text-slate-600 border border-slate-200 group-hover:border-emerald-200 group-hover:text-emerald-700 transition-colors shadow-sm">
+                        <span className="text-sm font-bold">{timeVal}</span>
+                        <span className="text-[10px] uppercase font-medium text-slate-400">{timeMeridiem}</span>
                       </div>
                       <div>
-                        <p className="text-sm font-bold text-slate-900 group-hover:text-blue-700">{appt.patient_name}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{appt.treatment}</span>
-                          <span className="text-xs font-mono font-medium text-slate-700">{appt.time}</span>
-                        </div>
+                        <h4 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
+                            {appt.patient_name}
+                        </h4>
+                        <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                            {appt.type || "General Visit"}
+                        </p>
                       </div>
                     </div>
-                    
-                    {/* ACTION BUTTON */}
-                    <div>
-                      {appt.status === "completed" ? (
-                        <span className="flex items-center text-green-600 text-xs font-bold bg-green-50 px-3 py-1.5 rounded-full border border-green-100">
-                          <CheckCircle2 className="w-3 h-3 mr-1" /> COMPLETED
-                        </span>
-                      ) : (
-                        <Button 
-                          size="sm" 
-                          className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                          onClick={(e) => handleComplete(appt.id, e)}
-                        >
-                          <PlayCircle className="w-4 h-4 mr-1.5" /> Start
+                    <div className="flex items-center gap-3">
+                        <Badge variant="outline" className={
+                            appt.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600'
+                        }>
+                            {appt.status}
+                        </Badge>
+                        <Button size="icon" variant="ghost" className="text-slate-400 hover:text-emerald-600">
+                            <ChevronRight size={18} />
                         </Button>
-                      )}
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          </CardContent>
+                );
+              })
+            )}
+          </div>
         </Card>
 
-        {/* 3. UPDATED SMART ASSISTANT (With Revenue Analysis) */}
-        <Card className="col-span-3 bg-gradient-to-br from-indigo-50 via-white to-purple-50 border border-indigo-100 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-indigo-900">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
-              </span>
-              Smart Assistant
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="p-4 bg-white/80 backdrop-blur rounded-xl border border-indigo-100 shadow-sm">
-                <p className="text-sm text-indigo-900 font-bold mb-1 flex items-center gap-2">
-                  <Users className="h-4 w-4" /> Queue Optimization
-                </p>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Your schedule has <strong>{stats.today_count} patients</strong> today. 
-                  Expected finish time: <strong>5:30 PM</strong>.
-                </p>
-              </div>
-              
-              <div className="p-4 bg-white/80 backdrop-blur rounded-xl border border-purple-100 shadow-sm">
-                <p className="text-sm text-purple-900 font-bold mb-1 flex items-center gap-2">
-                  <Package className="h-4 w-4" /> Inventory Alert
-                </p>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  {inventoryCount < 5 
-                    ? "⚠️ Stock is running low on some items. Check inventory." 
-                    : "✅ Inventory levels look healthy for today's procedures."}
-                </p>
-              </div>
+        {/* RIGHT SIDE: Quick Actions */}
+        <div className="md:col-span-3 space-y-6">
+            <Card className="border-0 shadow-xl bg-slate-900 text-white relative overflow-hidden h-fit">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+                <CardHeader className="border-b border-white/10 pb-4">
+                    <CardTitle className="flex items-center gap-2 text-white text-lg">
+                    <Sparkles className="w-5 h-5 text-emerald-400" />
+                    AI Assistant Active
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6 relative z-10">
+                    <p className="text-sm text-slate-300">
+                      I am monitoring your schedule and inventory. I will analyze your dashboard and provide insights automatically.
+                    </p>
+                </CardContent>
+            </Card>
 
-              {/* NEW: REVENUE ANALYSIS SECTION */}
-              <div className="p-4 bg-white/80 backdrop-blur rounded-xl border border-green-100 shadow-sm">
-                <p className="text-sm text-green-900 font-bold mb-1 flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" /> Revenue Insight
-                </p>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Total revenue: <strong>${stats.revenue}</strong>
-                  {stats.today_count > 0 && (
-                    <> • Avg/Patient: <strong>${Math.round(stats.revenue / stats.today_count)}</strong></>
-                  )}
-                  <br/>
-                  <span className="text-green-600 font-medium block mt-1">
-                    {stats.revenue > 0 ? "📈 Performance is on track." : "Waiting for completed appointments."}
-                  </span>
-                </p>
-              </div>
-
-            </div>
-          </CardContent>
-        </Card>
-
+            {/* Inventory Alerts */}
+            {stats?.inventory_alerts && stats.inventory_alerts.length > 0 && (
+                <Card className="border-amber-200 bg-amber-50 shadow-sm">
+                    <CardHeader className="pb-2 pt-4 px-4 border-b border-amber-100/50">
+                        <CardTitle className="flex items-center gap-2 text-amber-800 text-sm font-bold">
+                            <AlertTriangle className="w-4 h-4" /> Low Stock Alerts
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4 space-y-2">
+                        {stats.inventory_alerts.map((item: any, i: number) => (
+                            <div key={i} className="flex justify-between items-center text-xs bg-white p-2.5 rounded-lg border border-amber-100 shadow-sm">
+                                <span className="font-bold text-slate-700">{item.name}</span>
+                                <span className="text-red-600 font-black bg-red-50 px-2 py-0.5 rounded text-[10px]">
+                                    Only {item.qty} left
+                                </span>
+                            </div>
+                        ))}
+                    </CardContent>
+                </Card>
+            )}
+        </div>
       </div>
+
+      {/* 🟣 SMART ASSISTANT WITH DASHBOARD CONTEXT */}
+      <SmartAssistant 
+        role="doctor" 
+        pageName="Dashboard" 
+        pageContext={stats} 
+      />
+      
     </div>
   );
 }

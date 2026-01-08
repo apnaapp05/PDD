@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Package, AlertTriangle, MinusCircle, PlusCircle, Upload, FileSpreadsheet } from "lucide-react";
 import { DoctorAPI } from "@/lib/api";
+import SmartAssistant from "@/components/chat/SmartAssistant";
 
 export default function InventoryPage() {
   const [items, setItems] = useState<any[]>([]);
@@ -74,8 +75,15 @@ export default function InventoryPage() {
     }
   };
 
+  // --- PREPARE CONTEXT FOR AI ---
+  const inventoryContext = {
+    total_items: items.length,
+    low_stock_items: items.filter(i => i.quantity <= i.threshold).map(i => `${i.name} (Qty: ${i.quantity}, Threshold: ${i.threshold})`),
+    items_summary: items.slice(0, 10).map(i => `${i.name}: ${i.quantity} ${i.unit}`)
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Inventory & Supplies</h1>
@@ -103,7 +111,7 @@ export default function InventoryPage() {
 
       {/* Manual Add Form */}
       {showAdd && (
-        <Card className="bg-slate-50 border-slate-200">
+        <Card className="bg-slate-50 border-slate-200 animate-in slide-in-from-top-2">
           <CardContent className="p-4 flex flex-col md:flex-row gap-4 items-end">
             <div className="flex-1 w-full">
               <label className="text-xs font-bold text-slate-500">Item Name</label>
@@ -124,7 +132,7 @@ export default function InventoryPage() {
 
       {/* Low Stock Alerts */}
       {items.some(i => i.quantity <= i.threshold) && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r shadow-sm flex items-center gap-3">
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r shadow-sm flex items-center gap-3 animate-pulse">
           <AlertTriangle className="h-5 w-5 text-red-600" />
           <div>
             <h3 className="text-sm font-bold text-red-800">Low Stock Alert</h3>
@@ -172,6 +180,13 @@ export default function InventoryPage() {
           </Card>
         ))}
       </div>
+
+      {/* 🟣 SMART ASSISTANT WITH INVENTORY CONTEXT */}
+      <SmartAssistant 
+        role="doctor" 
+        pageName="Inventory" 
+        pageContext={inventoryContext} 
+      />
     </div>
   );
 }

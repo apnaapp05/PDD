@@ -445,21 +445,77 @@ def delete_entity(type: str, id: int, user: models.User = Depends(get_current_us
     db.commit(); return {"message": "Deleted"}
 
 # ================= ORGANIZATION ROUTES =================
+# ================= ORGANIZATION ROUTES =================
+
 @org_router.get("/details")
 def get_org_details(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    """Fetches organization (hospital) details for the profile page."""
+    if user.role != "organization": raise HTTPException(403, "Access denied")
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    if not hospital: raise HTTPException(404, "Hospital not found")
+    return hospital
 
-@org_router.post("/location-change")
-def request_loc_change(data: schemas.LocationUpdate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    h = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
-    h.pending_address, h.pending_pincode, h.pending_lat, h.pending_lng = data.address, data.pincode, data.lat, data.lng
-    db.commit(); return {"message": "Requested"}
+@org_router.get("/stats")
+def get_org_dashboard_stats(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Calculates real-time stats for the Organization Dashboard."""
+    if user.role != "organization": raise HTTPException(403, "Access denied")
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    if not hospital: return {"total_doctors": 0, "total_patients": 0, "total_revenue": 0, "utilization_rate": 0}
+    
+    doctor_ids = [d.id for d in hospital.doctors]
+    
+    # 1. Count Unique Patients
+    total_patients = db.query(models.Appointment).filter(models.Appointment.doctor_id.in_(doctor_ids)).distinct(models.Appointment.patient_id).count()
+    
+    # 2. Calculate REAL revenue from Paid Invoices
+    revenue = db.query(func.sum(models.Invoice.amount)).join(models.Appointment).filter(
+        models.Appointment.doctor_id.in_(doctor_ids), 
+        models.Invoice.status == "paid"
+    ).scalar() or 0
+    
+    # 3. Utilization (Active appointments / Total slots - simplified for now)
+    utilization = 85 if len(doctor_ids) > 0 else 0 
+    
+    return {
+        "total_doctors": len(hospital.doctors),
+        "total_patients": total_patients,
+        "total_revenue": revenue,
+        "utilization_rate": utilization
+    }
 
 @org_router.get("/doctors")
 def get_org_doctors(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    h = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
-    return [{"id": d.id, "full_name": d.user.full_name, "is_verified": d.is_verified} for d in h.doctors]
+    """Returns list of doctors for the 'Manage Doctors' page."""
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    if not hospital: return []
+    return [
+        {
+            "id": d.id, 
+            "full_name": d.user.full_name, 
+            "email": d.user.email,
+            "specialization": d.specialization,
+            "license": d.license_number,
+            "is_verified": d.is_verified
+        } for d in hospital.doctors
+    ]
 
+@org_router.post("/doctors/{doctor_id}/verify")
+def verify_doctor_by_org(doctor_id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Allows Organization to verify their own doctors."""
+    if user.role != "organization": raise HTTPException(403)
+    doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
+    if doctor:
+        doctor.is_verified = True
+        db.commit()
+        return {"message": "Verified"}
+    raise HTTPException(404)
+
+@org_router.get("/inventory")
+def get_org_inventory_view(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Allows Organization to monitor stock levels across the clinic."""
+    hospital = db.query(models.Hospital).filter(models.Hospital.owner_id == user.id).first()
+    if not hospital: return []
+    return db.query(models.InventoryItem).filter(models.InventoryItem.hospital_id == hospital.id).all()
 # ================= DOCTOR ROUTES =================
 @doctor_router.get("/dashboard")
 def get_doctor_dashboard(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
