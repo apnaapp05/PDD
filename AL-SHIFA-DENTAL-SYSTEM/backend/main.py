@@ -16,6 +16,7 @@ import codecs
 import logging
 import os
 import shutil
+import json
 from contextlib import asynccontextmanager
 
 import models
@@ -388,6 +389,29 @@ def add_inv(item: schemas.InventoryItemCreate, user: models.User = Depends(get_c
 def get_sched(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     doc = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
     return db.query(models.Appointment).filter(models.Appointment.doctor_id == doc.id).all()
+
+@doctor_router.get("/schedule/settings")
+def get_schedule_settings(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "doctor": raise HTTPException(403)
+    doc = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
+    if not doc: raise HTTPException(404, "Doctor profile not found")
+    
+    if not doc.scheduling_config:
+         return {"work_start_time": "09:00", "work_end_time": "17:00", "slot_duration": 30, "break_duration": 0}
+    try:
+        return json.loads(doc.scheduling_config)
+    except:
+         return {"work_start_time": "09:00", "work_end_time": "17:00", "slot_duration": 30, "break_duration": 0}
+
+@doctor_router.put("/schedule/settings")
+def update_schedule_settings(settings: dict, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "doctor": raise HTTPException(403)
+    doc = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
+    if not doc: raise HTTPException(404, "Doctor profile not found")
+    
+    doc.scheduling_config = json.dumps(settings)
+    db.commit()
+    return {"message": "Settings updated"}
 
 @doctor_router.get("/finance")
 def get_fin(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
