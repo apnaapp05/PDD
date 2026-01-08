@@ -9,11 +9,12 @@ logger = logging.getLogger(__name__)
 
 class AgentOutput(BaseModel):
     final_response: str
-    status: str  # "SUCCESS", "PENDING_TOOL", "ERROR"
+    status: str 
     tool_call: Optional[Dict[str, Any]] = None
 
 class BaseAgent:
-    def __init__(self, name: str, instructions: str):
+    # FIX: instructions is now optional ("")
+    def __init__(self, name: str, instructions: str = ""):
         self.name = name
         self.system_instructions = instructions
         self.history = []
@@ -43,35 +44,22 @@ class BaseAgent:
         """
 
         try:
-            # Call Gemini
             response_text = llm_client.generate_response(prompt)
-            
-            # Clean up response (sometimes LLMs add markdown ```json ... ```)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             
-            data = json.loads(clean_text)
-            
-            if data.get("action") == "final_answer":
-                return AgentOutput(
-                    final_response=data.get("response"),
-                    status="SUCCESS"
-                )
-            else:
-                return AgentOutput(
-                    final_response="Thinking...",
-                    status="PENDING_TOOL",
-                    tool_call={
-                        "function_name": data.get("action"),
-                        "arguments": data.get("params")
-                    }
-                )
+            try:
+                data = json.loads(clean_text)
+                if data.get("action") == "final_answer":
+                    return AgentOutput(final_response=data.get("response"), status="SUCCESS")
+                else:
+                    return AgentOutput(
+                        final_response="Thinking...",
+                        status="PENDING_TOOL",
+                        tool_call={"function_name": data.get("action"), "arguments": data.get("params")}
+                    )
+            except json.JSONDecodeError:
+                return AgentOutput(final_response=response_text, status="SUCCESS")
 
-        except json.JSONDecodeError:
-            # Fallback if LLM doesn't return perfect JSON
-            return AgentOutput(
-                final_response=response_text, # Just return raw text
-                status="SUCCESS"
-            )
         except Exception as e:
             logger.error(f"Agent Error: {e}")
             return AgentOutput(final_response="I encountered an internal error.", status="ERROR")
