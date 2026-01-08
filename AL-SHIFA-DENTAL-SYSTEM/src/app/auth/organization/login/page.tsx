@@ -1,5 +1,4 @@
 "use client";
-
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -8,108 +7,65 @@ import { Input } from "@/components/ui/input";
 import { Building2, Loader2, AlertCircle } from "lucide-react";
 import { AuthAPI } from "@/lib/api";
 
-export default function OrganizationLogin() {
+export default function OrgLogin() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [form, setForm] = useState({ email: "", password: "" });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
+    setLoading(true);
 
     try {
-      const response = await AuthAPI.login(email, password);
-
-      // Check Role
-      const role = response.data.role;
-      if (role !== "organization" && role !== "admin") {
-        setError("Access Denied: This account is not authorized.");
-        setLoading(false);
-        return;
-      }
-
-      localStorage.setItem("token", response.data.access_token);
-      localStorage.setItem("role", role);
-      
-      router.push("/organization/dashboard");
-
+      const res = await AuthAPI.login(form.email, form.password);
+      localStorage.setItem("token", res.data.access_token);
+      localStorage.setItem("role", "organization");
+      window.location.href = "/organization/dashboard";
     } catch (err: any) {
-      console.error("Login Error:", err);
-      if (err.response?.status === 401 || err.response?.status === 403) {
-        setError(err.response.data.detail || "Invalid credentials.");
-      } else {
-        setError("Connection failed. Please try again.");
-      }
+      const detail = err.response?.data?.detail;
+      if (typeof detail === "string") setError(detail);
+      else if (Array.isArray(detail)) setError(detail.map((e: any) => e.msg).join(", "));
+      else if (typeof detail === "object") setError(detail.msg || "Error occurred");
+      else setError("Login failed.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
-            <Building2 className="h-6 w-6 text-blue-600" />
+    <div className="space-y-6">
+      <div className="space-y-2 text-center">
+        <div className="flex justify-center mb-4">
+          <div className="h-12 w-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-600">
+            <Building2 className="h-6 w-6" />
           </div>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-slate-900">
-          Organization Portal
-        </h2>
-        <p className="mt-2 text-center text-sm text-slate-600">
-          Manage clinic operations and staff
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Hospital Login</h1>
+        <p className="text-slate-500 text-sm">Manage doctors and inventory</p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 border-t-4 border-blue-600">
-          
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded flex items-center gap-2">
-              <AlertCircle className="h-4 w-4" /> {error}
-            </div>
-          )}
-
-          <form className="space-y-6" onSubmit={handleLogin}>
-            <Input 
-              label="Organization Email" 
-              type="email" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-            <Input 
-              label="Password" 
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-
-            {/* FORGOT PASSWORD LINK */}
-            <div className="flex items-center justify-end">
-              <Link 
-                href="/auth/organization/forgot-password" 
-                className="text-sm font-medium text-blue-600 hover:text-blue-500 hover:underline"
-              >
-                Forgot password?
-              </Link>
-            </div>
-
-            <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white" size="lg" disabled={loading}>
-              {loading ? <Loader2 className="animate-spin h-5 w-5"/> : "Access Dashboard"}
-            </Button>
-          </form>
-
-          <div className="mt-6 text-center">
-             <p className="text-sm text-slate-500">
-               New Clinic? <Link href="/auth/organization/signup" className="text-blue-600 font-medium hover:underline">Register your organization</Link>
-             </p>
-          </div>
+      <form onSubmit={handleLogin} className="space-y-4">
+        {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded flex items-center gap-2"><AlertCircle className="h-4 w-4"/> {error}</div>}
+        
+        <div className="space-y-1">
+          <label className="text-xs font-bold uppercase text-slate-500">Email</label>
+          <Input type="email" placeholder="admin@hospital.com" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} required />
         </div>
+        
+        <div className="space-y-1">
+          <label className="text-xs font-bold uppercase text-slate-500">Password</label>
+          <Input type="password" placeholder="••••••••" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} required />
+        </div>
+
+        <Button className="w-full bg-purple-600 hover:bg-purple-700 font-bold" disabled={loading}>
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Enter Dashboard"}
+        </Button>
+      </form>
+
+      <div className="text-center text-sm">
+        <Link href="/auth/organization/signup" className="text-purple-600 hover:underline font-medium">Register New Organization</Link>
       </div>
     </div>
   );

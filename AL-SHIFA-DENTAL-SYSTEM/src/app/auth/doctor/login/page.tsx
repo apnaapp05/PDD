@@ -9,35 +9,39 @@ import { AuthAPI } from "@/lib/api";
 
 export default function DoctorLogin() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [form, setForm] = useState({ email: "", password: "" });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
+    setLoading(true);
 
     try {
-      const response = await AuthAPI.login(email, password);
-      if (response.data.role !== "doctor") {
-        setError("Access Denied: Not a Doctor account.");
-        setLoading(false);
-        return;
-      }
-      localStorage.setItem("token", response.data.access_token);
-      localStorage.setItem("role", response.data.role);
-      router.push("/doctor/dashboard");
-
+      const res = await AuthAPI.login(form.email, form.password);
+      localStorage.setItem("token", res.data.access_token);
+      localStorage.setItem("role", "doctor");
+      
+      // Force hard reload to clear any stale state
+      window.location.href = "/doctor/dashboard";
     } catch (err: any) {
+      console.error("Login error:", err);
+      // ROBUST ERROR HANDLING
       const detail = err.response?.data?.detail;
-      if (detail) {
+      
+      if (typeof detail === "string") {
         setError(detail);
+      } else if (Array.isArray(detail)) {
+        // Handle Pydantic array errors
+        setError(detail.map((e: any) => e.msg).join(", "));
+      } else if (typeof detail === "object") {
+        // Handle single object error
+        setError(detail.msg || "Validation error occurred.");
       } else if (err.response?.status === 401) {
-        setError("Invalid credentials.");
+        setError("Invalid email or password.");
       } else {
-        setError("Login failed. Please check connection.");
+        setError("Login failed. Please try again.");
       }
     } finally {
       setLoading(false);
@@ -45,46 +49,57 @@ export default function DoctorLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
-            <Stethoscope className="h-6 w-6 text-indigo-600" />
+    <div className="space-y-6">
+      <div className="space-y-2 text-center">
+        <div className="flex justify-center mb-4">
+          <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+            <Stethoscope className="h-6 w-6" />
           </div>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-bold text-slate-900">Doctor Portal</h2>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Doctor Login</h1>
+        <p className="text-slate-500 text-sm">Access your patients and appointments</p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 border-t-4 border-indigo-600">
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded flex items-center gap-2">
-              <AlertCircle className="h-4 w-4" /> {error}
-            </div>
-          )}
-          <form className="space-y-6" onSubmit={handleLogin}>
-            <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-            
-            {/* FORGOT PASSWORD LINK */}
-            <div className="flex items-center justify-end">
-              <Link 
-                href="/auth/doctor/forgot-password" 
-                className="text-sm font-medium text-indigo-600 hover:text-indigo-500 hover:underline"
-              >
-                Forgot password?
-              </Link>
-            </div>
-
-            <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white" size="lg" disabled={loading}>
-              {loading ? <Loader2 className="animate-spin h-5 w-5"/> : "Sign In"}
-            </Button>
-          </form>
-          <div className="mt-6 text-center">
-            <Link href="/auth/doctor/signup">
-              <Button variant="outline" className="w-full border-slate-300">Apply for Verification</Button>
-            </Link>
+      <form onSubmit={handleLogin} className="space-y-4">
+        {error && (
+          <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" /> {error}
           </div>
+        )}
+        
+        <div className="space-y-1">
+          <label className="text-xs font-bold uppercase text-slate-500">Email Address</label>
+          <Input 
+            type="email" 
+            placeholder="doctor@hospital.com" 
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            required
+          />
+        </div>
+        
+        <div className="space-y-1">
+          <label className="text-xs font-bold uppercase text-slate-500">Password</label>
+          <Input 
+            type="password" 
+            placeholder="••••••••" 
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            required
+          />
+        </div>
+
+        <Button className="w-full bg-blue-600 hover:bg-blue-700 font-bold" disabled={loading}>
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Sign In"}
+        </Button>
+      </form>
+
+      <div className="text-center text-sm space-y-2">
+        <Link href="/auth/doctor/signup" className="text-blue-600 hover:underline font-medium">
+          Apply for a new account
+        </Link>
+        <div className="text-slate-400 text-xs">
+          Forgot password? Contact admin.
         </div>
       </div>
     </div>

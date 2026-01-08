@@ -1,248 +1,157 @@
 "use client";
-
 import { useEffect, useState } from "react";
-import api from "@/lib/api";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { 
-  Users, Calendar, TrendingUp, Clock, 
-  ChevronRight, RefreshCcw, Loader2, Sparkles, AlertTriangle
-} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { 
+  Users, DollarSign, Calendar, Sparkles, CheckCircle2, Clock, 
+  RefreshCcw, PlayCircle, Loader2 
+} from "lucide-react";
+import { DoctorAPI } from "@/lib/api";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import SmartAssistant from "@/components/chat/SmartAssistant"; 
 
 export default function DoctorDashboard() {
   const router = useRouter();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
-  // 1. Live Data Fetching
   const fetchDashboard = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return router.push("/auth/doctor/login");
+
     try {
-      setRefreshing(true);
-      const res = await api.get("/doctor/dashboard");
+      setLoading(true);
+      const res = await DoctorAPI.getDashboardStats();
       setStats(res.data);
-    } catch (e) {
-      console.error("Failed to fetch dashboard", e);
+    } catch (error) {
+      console.error("Dashboard error", error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    fetchDashboard();
-  }, []);
+  useEffect(() => { fetchDashboard(); }, []);
 
-  if (loading) {
-    return (
-      <div className="flex h-[50vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-      </div>
-    );
-  }
+  const handleStart = async (id: number) => {
+    try {
+      await DoctorAPI.startAppointment(id);
+      fetchDashboard();
+    } catch (e) { alert("Failed to start appointment."); }
+  };
 
-  // Safe Accessors
-  const appointmentList = stats?.schedule || [];
-  const revenueDisplay = stats?.monthly_revenue || 0;
-  const patientCount = stats?.total_patients || 0;
-  const nextApptTime = stats?.next_appointment || "None";
+  const handleComplete = async (id: number) => {
+    if(!confirm("Mark as Complete? This will finalize the invoice and deduct inventory.")) return;
+    try {
+        await DoctorAPI.completeAppointment(id);
+        alert("Completed!");
+        fetchDashboard();
+    } catch(e) { alert("Error completing appointment"); }
+  };
+
+  if (loading) return <div className="p-20 text-center"><Loader2 className="animate-spin inline mr-2"/>Loading...</div>;
+  if (stats?.account_status === "no_profile") return <div className="p-10">Please complete your profile.</div>;
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 font-sans">
-      
-      {/* HEADER & ACTIONS */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="space-y-8">
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900">
-            Welcome back, {stats?.doctor_name || "Doctor"}
-          </h1>
-          <p className="text-slate-500 mt-1 flex items-center gap-2">
-            You have <span className="font-bold text-emerald-600">{stats?.today_count || 0} appointments</span> today.
-          </p>
+          <h1 className="text-3xl font-bold text-slate-900">Medical Dashboard</h1>
+          <p className="text-slate-500">Welcome back, Dr. {stats.doctor_name}</p>
         </div>
-        <div className="flex gap-3">
-           <Button 
-             variant="outline" 
-             size="sm" 
-             onClick={fetchDashboard} 
-             disabled={refreshing}
-             className="border-slate-200 text-slate-600 hover:bg-slate-50"
-           >
-             <RefreshCcw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-             Refresh
-           </Button>
-           <Link href="/doctor/schedule">
-             <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20">
-               View Full Calendar
-             </Button>
-           </Link>
-        </div>
+        <Button variant="outline" onClick={fetchDashboard}><RefreshCcw className="h-4 w-4 mr-2"/> Refresh</Button>
       </div>
-
-      {/* KPI CARDS */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-l-4 border-l-emerald-500 shadow-sm hover:shadow-md transition-all bg-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Est. Revenue</p>
-                <h3 className="text-3xl font-black text-slate-900 mt-2">
-                  {new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' }).format(revenueDisplay)}
-                </h3>
-              </div>
-              <div className="h-12 w-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
-                <TrendingUp size={24} />
-              </div>
-            </div>
-            <p className="text-xs text-slate-500 mt-4 font-medium flex items-center gap-1">
-               <span className="text-emerald-600">↑ 5%</span> from last month
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-all bg-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Patients</p>
-                <h3 className="text-3xl font-black text-slate-900 mt-2">
-                  {patientCount}
-                </h3>
-              </div>
-              <div className="h-12 w-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
-                <Users size={24} />
-              </div>
-            </div>
-            <p className="text-xs text-slate-500 mt-4">Active care plans</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-amber-500 shadow-sm hover:shadow-md transition-all bg-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Next Patient</p>
-                <h3 className="text-3xl font-black text-slate-900 mt-2">
-                  {nextApptTime}
-                </h3>
-              </div>
-              <div className="h-12 w-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600">
-                <Clock size={24} />
-              </div>
-            </div>
-            <p className="text-xs text-slate-500 mt-4">Check patient notes</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* MAIN CONTENT GRID */}
-      <div className="grid gap-6 md:grid-cols-7">
-        <Card className="md:col-span-4 border-slate-200 shadow-sm overflow-hidden h-fit bg-white">
-          <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
-            <CardTitle className="text-lg flex items-center gap-2 text-slate-800">
-              <Calendar className="w-5 h-5 text-slate-500" />
-              Today's Schedule
-            </CardTitle>
-          </CardHeader>
-          <div className="divide-y divide-slate-100">
-            {appointmentList.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 flex flex-col items-center gap-2">
-                <div className="h-14 w-14 bg-slate-50 rounded-full flex items-center justify-center mb-2">
-                    <Calendar className="h-6 w-6 text-slate-300" />
-                </div>
-                <p>No appointments for today. Enjoy your break! ☕</p>
-                <Link href="/doctor/schedule">
-                    <Button variant="link" className="text-emerald-600 font-bold">Check Full Calendar</Button>
-                </Link>
-              </div>
-            ) : (
-              appointmentList.map((appt: any, i: number) => {
-                const [timeVal, timeMeridiem] = appt.time ? appt.time.split(' ') : ["--:--", ""];
-                return (
-                  <div key={i} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors group cursor-pointer">
-                    <div className="flex items-center gap-4">
-                      <div className="h-12 w-14 rounded-lg bg-white flex flex-col items-center justify-center text-slate-600 border border-slate-200 group-hover:border-emerald-200 group-hover:text-emerald-700 transition-colors shadow-sm">
-                        <span className="text-sm font-bold">{timeVal}</span>
-                        <span className="text-[10px] uppercase font-medium text-slate-400">{timeMeridiem}</span>
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
-                            {appt.patient_name}
-                        </h4>
-                        <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                            {appt.type || "General Visit"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <Badge variant="outline" className={
-                            appt.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600'
-                        }>
-                            {appt.status}
-                        </Badge>
-                        <Button size="icon" variant="ghost" className="text-slate-400 hover:text-emerald-600">
-                            <ChevronRight size={18} />
-                        </Button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </Card>
-
-        {/* RIGHT SIDE: Quick Actions */}
-        <div className="md:col-span-3 space-y-6">
-            <Card className="border-0 shadow-xl bg-slate-900 text-white relative overflow-hidden h-fit">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
-                <CardHeader className="border-b border-white/10 pb-4">
-                    <CardTitle className="flex items-center gap-2 text-white text-lg">
-                    <Sparkles className="w-5 h-5 text-emerald-400" />
-                    AI Assistant Active
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-6 relative z-10">
-                    <p className="text-sm text-slate-300">
-                      I am monitoring your schedule and inventory. I will analyze your dashboard and provide insights automatically.
-                    </p>
-                </CardContent>
-            </Card>
-
-            {/* Inventory Alerts */}
-            {stats?.inventory_alerts && stats.inventory_alerts.length > 0 && (
-                <Card className="border-amber-200 bg-amber-50 shadow-sm">
-                    <CardHeader className="pb-2 pt-4 px-4 border-b border-amber-100/50">
-                        <CardTitle className="flex items-center gap-2 text-amber-800 text-sm font-bold">
-                            <AlertTriangle className="w-4 h-4" /> Low Stock Alerts
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-4 space-y-2">
-                        {stats.inventory_alerts.map((item: any, i: number) => (
-                            <div key={i} className="flex justify-between items-center text-xs bg-white p-2.5 rounded-lg border border-amber-100 shadow-sm">
-                                <span className="font-bold text-slate-700">{item.name}</span>
-                                <span className="text-red-600 font-black bg-red-50 px-2 py-0.5 rounded text-[10px]">
-                                    Only {item.qty} left
-                                </span>
-                            </div>
-                        ))}
-                    </CardContent>
-                </Card>
-            )}
-        </div>
-      </div>
-
-      {/* 🟣 SMART ASSISTANT WITH DASHBOARD CONTEXT */}
-      <SmartAssistant 
-        role="doctor" 
-        pageName="Dashboard" 
-        pageContext={stats} 
-      />
       
+      {/* AUTO-ANALYSIS */}
+      <Card className="bg-gradient-to-r from-indigo-900 to-blue-900 text-white border-none shadow-xl">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-indigo-100">
+            <Sparkles className="h-5 w-5 text-yellow-400" /> Smart Practice Insights
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid md:grid-cols-3 gap-6">
+          <div className="bg-white/10 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
+            <p className="text-xs font-bold uppercase text-indigo-300 mb-1">Queue Analysis</p>
+            <p className="text-sm leading-relaxed">{stats.analysis?.queue}</p>
+          </div>
+          <div className="bg-white/10 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
+            <p className="text-xs font-bold uppercase text-purple-300 mb-1">Inventory Health</p>
+            <p className="text-sm leading-relaxed">{stats.analysis?.inventory}</p>
+          </div>
+          <div className="bg-white/10 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
+            <p className="text-xs font-bold uppercase text-green-300 mb-1">Financial Projection</p>
+            <p className="text-sm leading-relaxed">{stats.analysis?.revenue}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* STATS CARDS */}
+      <div className="grid gap-6 md:grid-cols-3">
+        <Card className="border-l-4 border-l-blue-600 bg-white hover:shadow-lg transition-all" onClick={() => router.push("/doctor/schedule")}>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-slate-600">Appointments Today</CardTitle>
+            <Calendar className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent><div className="text-3xl font-bold text-slate-900">{stats.today_count}</div></CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-green-500 bg-white hover:shadow-lg transition-all" onClick={() => router.push("/doctor/finance")}>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-slate-600">Realized Revenue</CardTitle>
+            <DollarSign className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent><div className="text-3xl font-bold text-slate-900">Rs. {stats.revenue}</div></CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-purple-500 bg-white hover:shadow-lg transition-all" onClick={() => router.push("/doctor/patients")}>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-slate-600">Total Patients</CardTitle>
+            <Users className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent><div className="text-3xl font-bold text-slate-900">{stats.total_patients}</div></CardContent>
+        </Card>
+      </div>
+
+      {/* TODAY'S SCHEDULE */}
+      <Card className="bg-white border border-slate-200">
+        <CardHeader className="border-b border-slate-100 bg-slate-50/50">
+          <CardTitle className="flex items-center gap-2 text-slate-800"><Clock className="h-5 w-5 text-blue-600" /> Workflow Management</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="divide-y divide-slate-100">
+            {stats.appointments.length === 0 ? <div className="p-10 text-center text-slate-500">No appointments today.</div> : stats.appointments.map((appt: any) => (
+              <div key={appt.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
+                <div className="flex items-center gap-4">
+                  <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold ${appt.status === 'completed' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                    {appt.patient_name[0]}
+                  </div>
+                  <div><p className="font-bold text-slate-900">{appt.patient_name}</p><p className="text-xs text-slate-500">{appt.treatment} • {appt.time}</p></div>
+                </div>
+                
+                {/* 3-STEP BUTTONS */}
+                <div>
+                  {appt.status === 'confirmed' && (
+                    <Button size="sm" onClick={() => handleStart(appt.id)} className="bg-blue-600 hover:bg-blue-700">
+                      <PlayCircle className="h-4 w-4 mr-1"/> Start
+                    </Button>
+                  )}
+                  {appt.status === 'in_progress' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-orange-500 bg-orange-50 px-2 py-1 rounded border border-orange-100">In Progress</span>
+                      <Button size="sm" onClick={() => handleComplete(appt.id)} className="bg-green-600 hover:bg-green-700 shadow-sm">
+                        <CheckCircle2 className="h-4 w-4 mr-1"/> Complete
+                      </Button>
+                    </div>
+                  )}
+                  {appt.status === 'completed' && (
+                    <span className="text-green-600 text-xs font-bold flex items-center bg-green-50 px-3 py-1 rounded-full border border-green-200">
+                      <CheckCircle2 className="h-3 w-3 mr-1"/> Completed
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

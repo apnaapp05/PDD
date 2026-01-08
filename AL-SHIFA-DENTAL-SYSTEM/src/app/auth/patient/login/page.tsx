@@ -9,81 +9,69 @@ import { AuthAPI } from "@/lib/api";
 
 export default function PatientLogin() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [form, setForm] = useState({ email: "", password: "" });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
+    setLoading(true);
 
     try {
-      const response = await AuthAPI.login(email, password);
-      if (response.data.role !== "patient") {
-        setError("Access Denied: Not a Patient account.");
-        setLoading(false);
-        return;
-      }
-      localStorage.setItem("token", response.data.access_token);
-      localStorage.setItem("role", response.data.role);
-      router.push("/patient/dashboard");
-
+      const res = await AuthAPI.login(form.email, form.password);
+      localStorage.setItem("token", res.data.access_token);
+      localStorage.setItem("role", "patient");
+      
+      window.location.href = "/patient/dashboard";
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      if (detail) {
-        setError(detail);
-      } else {
-        setError("Invalid email or password.");
-      }
+      if (typeof detail === "string") setError(detail);
+      else if (Array.isArray(detail)) setError(detail.map((e: any) => e.msg).join(", "));
+      else if (typeof detail === "object") setError(detail.msg || "Error occurred");
+      else if (err.response?.status === 401) setError("Invalid credentials.");
+      else setError("Connection failed.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <div className="h-12 w-12 rounded-full bg-teal-100 flex items-center justify-center">
-            <Smile className="h-6 w-6 text-teal-600" />
+    <div className="space-y-6">
+      <div className="space-y-2 text-center">
+        <div className="flex justify-center mb-4">
+          <div className="h-12 w-12 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
+            <Smile className="h-6 w-6" />
           </div>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-bold text-slate-900">Patient Login</h2>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Patient Portal</h1>
+        <p className="text-slate-500 text-sm">View your history and appointments</p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 border-t-4 border-teal-500">
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded flex items-center gap-2">
-              <AlertCircle className="h-4 w-4" /> {error}
-            </div>
-          )}
-          <form className="space-y-6" onSubmit={handleLogin}>
-            <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-
-            {/* FORGOT PASSWORD LINK */}
-            <div className="flex items-center justify-end">
-              <Link 
-                href="/auth/patient/forgot-password" 
-                className="text-sm font-medium text-teal-600 hover:text-teal-500 hover:underline"
-              >
-                Forgot password?
-              </Link>
-            </div>
-
-            <Button className="w-full bg-teal-600 hover:bg-teal-700 text-white" size="lg" disabled={loading}>
-              {loading ? <Loader2 className="animate-spin h-5 w-5"/> : "Login"}
-            </Button>
-          </form>
-          <div className="mt-6 text-center">
-            <Link href="/auth/patient/signup">
-              <span className="text-sm text-teal-600 hover:underline">New here? Create Account</span>
-            </Link>
+      <form onSubmit={handleLogin} className="space-y-4">
+        {error && (
+          <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" /> {error}
           </div>
+        )}
+        
+        <div className="space-y-1">
+          <label className="text-xs font-bold uppercase text-slate-500">Email</label>
+          <Input type="email" placeholder="you@example.com" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} required />
         </div>
+        
+        <div className="space-y-1">
+          <label className="text-xs font-bold uppercase text-slate-500">Password</label>
+          <Input type="password" placeholder="••••••••" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} required />
+        </div>
+
+        <Button className="w-full bg-emerald-600 hover:bg-emerald-700 font-bold" disabled={loading}>
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Login"}
+        </Button>
+      </form>
+
+      <div className="text-center text-sm">
+        <Link href="/auth/patient/signup" className="text-emerald-600 hover:underline font-medium">Create Patient Account</Link>
       </div>
     </div>
   );

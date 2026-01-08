@@ -1,192 +1,232 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+import { useState, useEffect, useRef } from "react";
+import { DoctorAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Package, AlertTriangle, MinusCircle, PlusCircle, Upload, FileSpreadsheet } from "lucide-react";
-import { DoctorAPI } from "@/lib/api";
-import SmartAssistant from "@/components/chat/SmartAssistant";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Package, Upload, Search, RefreshCcw, Plus, Minus, X, Loader2 } from "lucide-react";
+
+// Interface for type safety
+interface InventoryItem {
+  id: number;
+  name: string;
+  quantity: number;
+  unit: string;
+  threshold: number;
+}
 
 export default function InventoryPage() {
-  const [items, setItems] = useState<any[]>([]);
+  // --- State ---
+  const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newItem, setNewItem] = useState({ name: "", quantity: "", unit: "pcs", threshold: "10" });
-  const [showAdd, setShowAdd] = useState(false);
+  const [search, setSearch] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  
+  // Form State
+  const [newItem, setNewItem] = useState({ name: "", quantity: 0, unit: "pcs", threshold: 10 });
+  
+  // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchInventory = async () => {
+  // --- Data Loading ---
+  const load = async () => {
+    // Only show full loader on initial load, not during refreshes to keep UI snappy
+    if(items.length === 0) setLoading(true); 
     try {
       const res = await DoctorAPI.getInventory();
       setItems(res.data);
-    } catch (error) {
-      console.error("Failed to load inventory");
-    } finally {
-      setLoading(false);
+    } catch (e) { 
+      console.error("Failed to load inventory", e); 
+    } finally { 
+      setLoading(false); 
     }
   };
 
-  useEffect(() => {
-    fetchInventory();
-  }, []);
+  useEffect(() => { load(); }, []);
+
+  // --- Handlers ---
+
+  const handleUpload = async (e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const fd = new FormData();
+    fd.append("file", file);
+    
+    try {
+      await DoctorAPI.uploadInventory(fd);
+      alert("Inventory CSV Uploaded Successfully!");
+      load();
+    } catch (err) { 
+      alert("Failed. CSV Headers must be: Item Name, Quantity, Unit"); 
+    } finally { 
+      if(fileInputRef.current) fileInputRef.current.value = ""; 
+    }
+  };
 
   const handleAddItem = async () => {
-    if (!newItem.name || !newItem.quantity) return alert("Please fill details");
+    if(!newItem.name) return;
     try {
-      await DoctorAPI.addInventoryItem({
-        name: newItem.name,
-        quantity: parseInt(newItem.quantity),
-        unit: newItem.unit,
-        threshold: parseInt(newItem.threshold)
-      });
-      setNewItem({ name: "", quantity: "", unit: "pcs", threshold: "10" });
-      setShowAdd(false);
-      fetchInventory();
-    } catch (error) {
-      alert("Failed to add item");
+        await DoctorAPI.addInventoryItem(newItem);
+        setShowModal(false);
+        setNewItem({ name: "", quantity: 0, unit: "pcs", threshold: 10 });
+        load();
+    } catch (e) {
+        alert("Failed to add item");
     }
   };
 
-  const handleStockUpdate = async (id: number, change: number) => {
+  const handleUpdateStock = async (item: InventoryItem, change: number) => {
+    const newQty = Math.max(0, item.quantity + change);
+    
+    // 1. Optimistic UI Update (Update state immediately before API call)
+    setItems(currentItems => 
+        currentItems.map(i => i.id === item.id ? {...i, quantity: newQty} : i)
+    );
+
     try {
-      await DoctorAPI.updateStock(id, change);
-      fetchInventory(); // Refresh to show new quantity
-    } catch (error) {
-      alert("Update failed");
+        // 2. API Call
+        await DoctorAPI.updateStock(item.id, newQty);
+    } catch (e) {
+        // 3. Revert on failure
+        console.error("Stock update failed", e);
+        alert("Failed to update stock");
+        load(); // Re-fetch true data
     }
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  // --- Filtering ---
+  const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
 
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      setLoading(true);
-      await DoctorAPI.uploadInventory(formData);
-      alert("Inventory Uploaded Successfully!");
-      fetchInventory();
-    } catch (error) {
-      alert("Failed to upload file. Please ensure it is a valid CSV.");
-    } finally {
-      setLoading(false);
-      if(fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  // --- PREPARE CONTEXT FOR AI ---
-  const inventoryContext = {
-    total_items: items.length,
-    low_stock_items: items.filter(i => i.quantity <= i.threshold).map(i => `${i.name} (Qty: ${i.quantity}, Threshold: ${i.threshold})`),
-    items_summary: items.slice(0, 10).map(i => `${i.name}: ${i.quantity} ${i.unit}`)
-  };
-
+  // --- Render ---
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Inventory & Supplies</h1>
-          <p className="text-sm text-slate-500">Track consumption and low stock alerts</p>
-        </div>
-        
+    <div className="space-y-6">
+      
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Package className="h-6 w-6 text-indigo-600"/> Inventory Management
+        </h1>
         <div className="flex gap-2">
-          {/* Upload Button */}
-          <input 
-            type="file" 
-            accept=".csv" 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-            className="hidden" 
-          />
-          <Button onClick={() => fileInputRef.current?.click()} variant="outline" className="border-green-600 text-green-700 hover:bg-green-50">
-            <Upload className="h-4 w-4 mr-2" /> Upload Sheet
+          {/* Hidden File Input */}
+          <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleUpload} />
+          
+          <Button onClick={() => setShowModal(true)} className="bg-indigo-600">
+            <Plus className="h-4 w-4 mr-2"/> Add Item
           </Button>
-
-          <Button onClick={() => setShowAdd(!showAdd)} className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="h-4 w-4 mr-2" /> Add Item
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+            <Upload className="h-4 w-4 mr-2"/> CSV Import
+          </Button>
+          <Button onClick={load} variant="ghost" size="icon">
+            <RefreshCcw className="h-4 w-4"/>
           </Button>
         </div>
       </div>
 
-      {/* Manual Add Form */}
-      {showAdd && (
-        <Card className="bg-slate-50 border-slate-200 animate-in slide-in-from-top-2">
-          <CardContent className="p-4 flex flex-col md:flex-row gap-4 items-end">
-            <div className="flex-1 w-full">
-              <label className="text-xs font-bold text-slate-500">Item Name</label>
-              <Input value={newItem.name} onChange={(e) => setNewItem({...newItem, name: e.target.value})} placeholder="e.g. Lidocaine" />
+      {/* Main Table Card */}
+      <Card>
+        <CardHeader className="pb-2">
+            <div className="relative max-w-sm">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                <Input 
+                    placeholder="Search items..." 
+                    value={search} 
+                    onChange={e=>setSearch(e.target.value)} 
+                    className="pl-9"
+                />
             </div>
-            <div className="w-full md:w-24">
-              <label className="text-xs font-bold text-slate-500">Qty</label>
-              <Input type="number" value={newItem.quantity} onChange={(e) => setNewItem({...newItem, quantity: e.target.value})} />
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+             <div className="flex justify-center p-8"><Loader2 className="animate-spin h-6 w-6 text-slate-400"/></div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 uppercase text-xs text-slate-500">
+                  <tr>
+                    <th className="p-3 rounded-tl-lg">Name</th>
+                    <th className="p-3">Qty</th>
+                    <th className="p-3">Actions</th>
+                    <th className="p-3">Unit</th>
+                    <th className="p-3 rounded-tr-lg">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filtered.length > 0 ? filtered.map(i => (
+                    <tr key={i.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-3 font-medium text-slate-700">{i.name}</td>
+                      <td className="p-3 font-mono font-bold text-lg text-slate-800">{i.quantity}</td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                            <Button size="sm" variant="outline" className="h-8 w-8 p-0 hover:border-red-300 hover:bg-red-50 hover:text-red-600" onClick={() => handleUpdateStock(i, -1)}>
+                                <Minus className="h-3 w-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-8 w-8 p-0 bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100" onClick={() => handleUpdateStock(i, 1)}>
+                                <Plus className="h-3 w-3" />
+                            </Button>
+                        </div>
+                      </td>
+                      <td className="p-3 text-slate-500">{i.unit}</td>
+                      <td className="p-3">
+                        {i.quantity < i.threshold ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                Low Stock
+                            </span>
+                        ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                OK
+                            </span>
+                        )}
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-500">No items found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-            <div className="w-full md:w-24">
-              <label className="text-xs font-bold text-slate-500">Unit</label>
-              <Input value={newItem.unit} onChange={(e) => setNewItem({...newItem, unit: e.target.value})} />
-            </div>
-            <Button onClick={handleAddItem} className="w-full md:w-auto">Save</Button>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Low Stock Alerts */}
-      {items.some(i => i.quantity <= i.threshold) && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r shadow-sm flex items-center gap-3 animate-pulse">
-          <AlertTriangle className="h-5 w-5 text-red-600" />
-          <div>
-            <h3 className="text-sm font-bold text-red-800">Low Stock Alert</h3>
-            <p className="text-xs text-red-600">
-              {items.filter(i => i.quantity <= i.threshold).map(i => i.name).join(", ")} are running low.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Inventory List */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {items.map((item) => (
-          <Card key={item.id} className="hover:shadow-md transition-shadow">
-            <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-base font-bold text-slate-800">{item.name}</CardTitle>
-              <Package className="h-4 w-4 text-slate-400" />
+      {/* Add Item Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-sm bg-white shadow-xl">
+            <CardHeader className="flex flex-row justify-between items-center">
+                <CardTitle>Add New Stock</CardTitle>
+                <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-red-500"><X className="h-5 w-5"/></button>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-end justify-between">
-                <div>
-                  <div className={`text-2xl font-bold ${item.quantity <= item.threshold ? 'text-red-600' : 'text-slate-900'}`}>
-                    {item.quantity}
-                  </div>
-                  <p className="text-xs text-slate-500">{item.unit} available</p>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                  <label className="text-sm font-medium">Item Name</label>
+                  <Input placeholder="e.g. Latex Gloves" value={newItem.name} onChange={e=>setNewItem({...newItem, name: e.target.value})}/>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <label className="text-sm font-medium">Initial Qty</label>
+                    <Input type="number" placeholder="0" value={newItem.quantity} onChange={e=>setNewItem({...newItem, quantity: parseInt(e.target.value) || 0})}/>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => handleStockUpdate(item.id, -1)}
-                    className="h-8 w-8 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
-                    title="Use 1"
-                  >
-                    <MinusCircle className="h-5 w-5" />
-                  </button>
-                  <button 
-                    onClick={() => handleStockUpdate(item.id, 1)}
-                    className="h-8 w-8 flex items-center justify-center rounded-full bg-green-100 text-green-600 hover:bg-green-200 transition-colors"
-                    title="Restock 1"
-                  >
-                    <PlusCircle className="h-5 w-5" />
-                  </button>
+                <div className="space-y-2">
+                    <label className="text-sm font-medium">Unit</label>
+                    <Input placeholder="e.g. Box" value={newItem.unit} onChange={e=>setNewItem({...newItem, unit: e.target.value})}/>
                 </div>
+              </div>
+              <div className="space-y-2">
+                  <label className="text-sm font-medium">Low Stock Threshold</label>
+                  <Input type="number" placeholder="10" value={newItem.threshold} onChange={e=>setNewItem({...newItem, threshold: parseInt(e.target.value) || 0})}/>
+              </div>
+              <div className="flex justify-end gap-2 pt-4">
+                <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
+                <Button onClick={handleAddItem} className="bg-indigo-600">Save Item</Button>
               </div>
             </CardContent>
           </Card>
-        ))}
-      </div>
-
-      {/* 🟣 SMART ASSISTANT WITH INVENTORY CONTEXT */}
-      <SmartAssistant 
-        role="doctor" 
-        pageName="Inventory" 
-        pageContext={inventoryContext} 
-      />
+        </div>
+      )}
     </div>
   );
 }
