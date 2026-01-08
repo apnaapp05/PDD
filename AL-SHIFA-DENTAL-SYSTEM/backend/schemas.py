@@ -20,7 +20,6 @@ class UserCreate(UserBase):
     gender: Optional[str] = None
     specialization: Optional[str] = None
     license_number: Optional[str] = None
-    scheduling_config: Optional[dict] = None
 
 class UserOut(UserBase):
     id: int
@@ -57,7 +56,14 @@ class DoctorJoinRequest(BaseModel):
     specialization: str
     license_number: str
 
-class BlockSlotCreate(BaseModel):
+# --- SCHEDULING (UPDATED) ---
+class ScheduleSettings(BaseModel):
+    work_start_time: str
+    work_end_time: str
+    slot_duration: int
+    break_duration: int
+
+class BlockSlot(BaseModel):
     date: str
     time: Optional[str] = None
     reason: str
@@ -125,23 +131,3 @@ class InvoiceOut(BaseModel):
     created_at: datetime
     patient_name: str
     treatment_type: str
-
-# --- CLINICAL CASES ---
-class CaseCreate(BaseModel):
-    patient_id: int
-    title: str
-    stage: str
-
-class CaseUpdate(BaseModel):
-    stage: str
-    status: Optional[str] = None
-
-class CaseOut(BaseModel):
-    id: int
-    title: str
-    stage: str
-    status: str
-    updated_at: datetime
-    patient_name: str
-    class Config:
-        orm_mode = True

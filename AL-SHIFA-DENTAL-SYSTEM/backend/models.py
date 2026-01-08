@@ -14,7 +14,7 @@ class User(Base):
     is_email_verified = Column(Boolean, default=False)
     otp_code = Column(String, nullable=True)
     otp_expires_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    phone_number = Column(String, nullable=True)
     
     doctor_profile = relationship("Doctor", back_populates="user", uselist=False)
     patient_profile = relationship("Patient", back_populates="user", uselist=False)
@@ -32,7 +32,6 @@ class Hospital(Base):
     is_verified = Column(Boolean, default=False)
     phone_number = Column(String, nullable=True)
     
-    # Location change requests
     pending_address = Column(String, nullable=True)
     pending_pincode = Column(String, nullable=True)
     pending_lat = Column(Float, nullable=True)
@@ -51,9 +50,12 @@ class Doctor(Base):
     specialization = Column(String)
     license_number = Column(String)
     is_verified = Column(Boolean, default=False)
-    
-    # NEW: Store JSON config for schedule (Start/End time, Slot duration)
-    scheduling_config = Column(String, default='{"work_start_time": "09:00", "work_end_time": "17:00", "slot_duration": 30, "break_duration": 0}')
+
+    # --- NEW SCHEDULE SETTINGS ---
+    work_start_time = Column(String, default="09:00")
+    work_end_time = Column(String, default="17:00")
+    slot_duration = Column(Integer, default=30)
+    break_duration = Column(Integer, default=5)
 
     user = relationship("User", back_populates="doctor_profile")
     hospital = relationship("Hospital", back_populates="doctors")
@@ -80,7 +82,6 @@ class PatientFile(Base):
     filename = Column(String)
     filepath = Column(String)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
-    
     patient = relationship("Patient", back_populates="files")
 
 class Appointment(Base):
@@ -90,8 +91,8 @@ class Appointment(Base):
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=True) # Nullable for blocked slots
     start_time = Column(DateTime)
     end_time = Column(DateTime)
-    status = Column(String, default="confirmed") 
-    treatment_type = Column(String)
+    status = Column(String, default="confirmed") # confirmed, completed, cancelled, blocked, in_progress
+    treatment_type = Column(String, nullable=True)
     notes = Column(String, nullable=True)
 
     doctor = relationship("Doctor", back_populates="appointments")
