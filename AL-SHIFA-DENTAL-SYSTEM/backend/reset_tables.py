@@ -14,7 +14,6 @@ def seed_test_data():
     db = SessionLocal()
     try:
         # 1. ORGANIZATION (o@o.o / o)
-        # Removed 'address' from User model
         org = models.User(
             email="o@o.o", password_hash=get_hash("o"),
             full_name="o o", role="organization", is_email_verified=True,
@@ -33,7 +32,6 @@ def seed_test_data():
         db.refresh(hospital)
 
         # 2. DOCTOR (d@d.d / d)
-        # Removed 'address' from User model
         doc = models.User(
             email="d@d.d", password_hash=get_hash("d"),
             full_name="d d", role="doctor", is_email_verified=True,
@@ -52,7 +50,6 @@ def seed_test_data():
         db.commit()
 
         # 3. PATIENT (p@p.p / p)
-        # Removed 'address' from User model
         pat = models.User(
             email="p@p.p", password_hash=get_hash("p"),
             full_name="p p", role="patient", is_email_verified=True,
@@ -78,16 +75,16 @@ def seed_test_data():
 
 def reset_tables():
     print("🔄 STARTING DATABASE RESET...")
-    with engine.connect() as conn:
-        try:
-            # This drops the public schema and recreates it to ensure a clean slate
-            conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
-            conn.commit()
-            print("✅ Database wiped successfully.")
-        except Exception as e:
-            print(f"❌ Error dropping tables: {e}")
-            return
+    
+    # 1. DROP ALL TABLES (Compatible with SQLite & Postgres)
+    try:
+        Base.metadata.drop_all(bind=engine)
+        print("✅ Old tables dropped successfully.")
+    except Exception as e:
+        print(f"❌ Error dropping tables: {e}")
+        return
 
+    # 2. RECREATE TABLES
     print("🏗️  Recreating tables...")
     try:
         Base.metadata.create_all(bind=engine)

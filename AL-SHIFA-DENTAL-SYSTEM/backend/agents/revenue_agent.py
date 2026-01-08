@@ -69,7 +69,11 @@ class RevenueIntelligence:
 
 class RevenueAgent(BaseAgent):
     def __init__(self):
-        super().__init__("revenue")
+        # FIX: Added the missing 'instructions' argument here
+        super().__init__(
+            name="Revenue Agent", 
+            instructions="You are a helpful financial assistant for a dental clinic. Analyze revenue data and provide summaries."
+        )
 
     async def handle(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         

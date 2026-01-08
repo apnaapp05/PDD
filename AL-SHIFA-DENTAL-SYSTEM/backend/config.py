@@ -7,13 +7,13 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 # Database Configuration (PostgreSQL)
 # Format: postgresql://username:password@localhost:port/database_name
-DATABASE_URL = "postgresql://postgres:ADLAB@127.0.0.1:5432/alshifa_db"
+DATABASE_URL = "sqlite:///./dental_clinic.db"
 
 # AI Configuration
 # PASTE YOUR GEMINI API KEY BELOW inside the quotes
-GEMINI_API_KEY = "AIzaSyAccxVtjqPgbMoTYr6l-oplruKAUalcMKo" 
+GEMINI_API_KEY = "AIzaSyBhwDmB8YfCPYwbXNSR4P44dY97pgN_gts" 
 
 # Agent Settings
 MAX_AGENT_STEPS = 5
 
-#AIzaSyAccxVtjqPgbMoTYr6l-oplruKAUalcMKo
+#AIzaSyBhwDmB8YfCPYwbXNSR4P44dY97pgN_gts

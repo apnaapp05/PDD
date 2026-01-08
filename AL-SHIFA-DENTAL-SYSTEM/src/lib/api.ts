@@ -92,8 +92,15 @@ export const DoctorAPI = {
   getFinance: async () => api.get("/doctor/finance"),
 
   // NEW: Agent Chat
+  // NEW: Agent Chat
   chatWithAgent: async (data: { agent_type: string; user_query: string; role: string }) =>
-    api.post("/agent/router", data),
+    api.post("/api/agent/chat", {  // <--- FIX 1: Correct URL
+      message: data.user_query,    // <--- FIX 2: Map 'user_query' to 'message'
+      user_role: data.role,        // <--- FIX 3: Map 'role' to 'user_role'
+      agent_type: data.agent_type,
+      user_id: 1,                  // <--- FIX 4: Backend requires an ID (sending 1 as default)
+      context: {}
+    }),
 
   getAiInsights: async () => Promise.resolve({ data: [] }), 
 };
