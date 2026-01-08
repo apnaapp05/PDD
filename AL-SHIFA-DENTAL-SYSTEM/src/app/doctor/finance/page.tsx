@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
-import SmartAssistant from "@/components/chat/SmartAssistant";
 
 export default function FinancePage() {
   const router = useRouter();
@@ -106,13 +105,6 @@ export default function FinancePage() {
   };
 
   useEffect(() => { fetchFinance(); }, []);
-
-  // --- PREPARE CONTEXT FOR AI ---
-  const financeContext = {
-    revenue: data.total_revenue,
-    pending_payments: data.total_pending,
-    recent_invoices: data.invoices.slice(0, 5).map((inv: any) => `Invoice #${inv.id}: Rs.${inv.amount} (${inv.status})`)
-  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -224,13 +216,6 @@ export default function FinancePage() {
            )}
         </CardContent>
       </Card>
-
-      {/* 🟣 SMART ASSISTANT WITH FINANCE CONTEXT */}
-      <SmartAssistant 
-        role="doctor" 
-        pageName="Financials" 
-        pageContext={financeContext} 
-      />
     </div>
   );
 }

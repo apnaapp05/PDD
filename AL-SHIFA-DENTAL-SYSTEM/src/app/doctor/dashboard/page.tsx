@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Users, DollarSign, Calendar, Sparkles, CheckCircle2, Clock, 
-  RefreshCcw, PlayCircle, Loader2 
+  RefreshCcw, PlayCircle, Loader2, AlertCircle 
 } from "lucide-react";
 import { DoctorAPI } from "@/lib/api";
 import { useRouter } from "next/navigation";
@@ -13,6 +13,7 @@ export default function DoctorDashboard() {
   const router = useRouter();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   const fetchDashboard = async () => {
     const token = localStorage.getItem("token");
@@ -20,10 +21,16 @@ export default function DoctorDashboard() {
 
     try {
       setLoading(true);
+      setError(false);
       const res = await DoctorAPI.getDashboardStats();
-      setStats(res.data);
+      if(res.data) {
+        setStats(res.data);
+      } else {
+        setError(true);
+      }
     } catch (error) {
       console.error("Dashboard error", error);
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -47,15 +54,41 @@ export default function DoctorDashboard() {
     } catch(e) { alert("Error completing appointment"); }
   };
 
-  if (loading) return <div className="p-20 text-center"><Loader2 className="animate-spin inline mr-2"/>Loading...</div>;
-  if (stats?.account_status === "no_profile") return <div className="p-10">Please complete your profile.</div>;
+  // --- LOADING STATE ---
+  if (loading) return (
+    <div className="flex h-screen items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-blue-600 mr-2"/>
+      <span className="text-slate-500 font-medium">Loading Dashboard...</span>
+    </div>
+  );
+
+  // --- ERROR STATE (Fixes the crash) ---
+  if (error || !stats) return (
+    <div className="flex flex-col h-screen items-center justify-center gap-4">
+      <AlertCircle className="h-12 w-12 text-red-500" />
+      <h2 className="text-xl font-bold text-slate-900">Failed to load dashboard data</h2>
+      <Button onClick={fetchDashboard} variant="outline">
+        <RefreshCcw className="h-4 w-4 mr-2"/> Retry
+      </Button>
+    </div>
+  );
+
+  // --- NO PROFILE STATE ---
+  if (stats.account_status === "no_profile") return (
+    <div className="p-10 text-center">
+      <h2 className="text-xl font-bold mb-2">Profile Incomplete</h2>
+      <p className="text-slate-500 mb-4">Please complete your doctor profile to access the dashboard.</p>
+      <Button onClick={() => router.push("/doctor/profile")}>Go to Profile</Button>
+    </div>
+  );
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Medical Dashboard</h1>
-          <p className="text-slate-500">Welcome back, Dr. {stats.doctor_name}</p>
+          {/* SAFE ACCESS using optional chaining just in case */}
+          <p className="text-slate-500">Welcome back, Dr. {stats?.doctor_name || "Doctor"}</p>
         </div>
         <Button variant="outline" onClick={fetchDashboard}><RefreshCcw className="h-4 w-4 mr-2"/> Refresh</Button>
       </div>
@@ -70,43 +103,43 @@ export default function DoctorDashboard() {
         <CardContent className="grid md:grid-cols-3 gap-6">
           <div className="bg-white/10 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
             <p className="text-xs font-bold uppercase text-indigo-300 mb-1">Queue Analysis</p>
-            <p className="text-sm leading-relaxed">{stats.analysis?.queue}</p>
+            <p className="text-sm leading-relaxed">{stats.analysis?.queue || "No data"}</p>
           </div>
           <div className="bg-white/10 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
             <p className="text-xs font-bold uppercase text-purple-300 mb-1">Inventory Health</p>
-            <p className="text-sm leading-relaxed">{stats.analysis?.inventory}</p>
+            <p className="text-sm leading-relaxed">{stats.analysis?.inventory || "No data"}</p>
           </div>
           <div className="bg-white/10 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
             <p className="text-xs font-bold uppercase text-green-300 mb-1">Financial Projection</p>
-            <p className="text-sm leading-relaxed">{stats.analysis?.revenue}</p>
+            <p className="text-sm leading-relaxed">{stats.analysis?.revenue || "No data"}</p>
           </div>
         </CardContent>
       </Card>
 
       {/* STATS CARDS */}
       <div className="grid gap-6 md:grid-cols-3">
-        <Card className="border-l-4 border-l-blue-600 bg-white hover:shadow-lg transition-all" onClick={() => router.push("/doctor/schedule")}>
+        <Card className="border-l-4 border-l-blue-600 bg-white hover:shadow-lg transition-all cursor-pointer" onClick={() => router.push("/doctor/schedule")}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-slate-600">Appointments Today</CardTitle>
             <Calendar className="h-4 w-4 text-blue-600" />
           </CardHeader>
-          <CardContent><div className="text-3xl font-bold text-slate-900">{stats.today_count}</div></CardContent>
+          <CardContent><div className="text-3xl font-bold text-slate-900">{stats.today_count || 0}</div></CardContent>
         </Card>
 
-        <Card className="border-l-4 border-l-green-500 bg-white hover:shadow-lg transition-all" onClick={() => router.push("/doctor/finance")}>
+        <Card className="border-l-4 border-l-green-500 bg-white hover:shadow-lg transition-all cursor-pointer" onClick={() => router.push("/doctor/finance")}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-slate-600">Realized Revenue</CardTitle>
             <DollarSign className="h-4 w-4 text-green-600" />
           </CardHeader>
-          <CardContent><div className="text-3xl font-bold text-slate-900">Rs. {stats.revenue}</div></CardContent>
+          <CardContent><div className="text-3xl font-bold text-slate-900">Rs. {stats.revenue || 0}</div></CardContent>
         </Card>
 
-        <Card className="border-l-4 border-l-purple-500 bg-white hover:shadow-lg transition-all" onClick={() => router.push("/doctor/patients")}>
+        <Card className="border-l-4 border-l-purple-500 bg-white hover:shadow-lg transition-all cursor-pointer" onClick={() => router.push("/doctor/patients")}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-slate-600">Total Patients</CardTitle>
             <Users className="h-4 w-4 text-purple-600" />
           </CardHeader>
-          <CardContent><div className="text-3xl font-bold text-slate-900">{stats.total_patients}</div></CardContent>
+          <CardContent><div className="text-3xl font-bold text-slate-900">{stats.total_patients || 0}</div></CardContent>
         </Card>
       </div>
 
@@ -117,13 +150,19 @@ export default function DoctorDashboard() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="divide-y divide-slate-100">
-            {stats.appointments.length === 0 ? <div className="p-10 text-center text-slate-500">No appointments today.</div> : stats.appointments.map((appt: any) => (
+            {!stats.appointments || stats.appointments.length === 0 ? (
+              <div className="p-10 text-center text-slate-500">No appointments today.</div>
+            ) : (
+              stats.appointments.map((appt: any) => (
               <div key={appt.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-center gap-4">
                   <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold ${appt.status === 'completed' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
-                    {appt.patient_name[0]}
+                    {appt.patient_name ? appt.patient_name[0] : "U"}
                   </div>
-                  <div><p className="font-bold text-slate-900">{appt.patient_name}</p><p className="text-xs text-slate-500">{appt.treatment} • {appt.time}</p></div>
+                  <div>
+                    <p className="font-bold text-slate-900">{appt.patient_name || "Unknown"}</p>
+                    <p className="text-xs text-slate-500">{appt.treatment} • {appt.time}</p>
+                  </div>
                 </div>
                 
                 {/* 3-STEP BUTTONS */}
@@ -148,7 +187,7 @@ export default function DoctorDashboard() {
                   )}
                 </div>
               </div>
-            ))}
+            )))}
           </div>
         </CardContent>
       </Card>

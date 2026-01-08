@@ -51,6 +51,9 @@ class Doctor(Base):
     specialization = Column(String)
     license_number = Column(String)
     is_verified = Column(Boolean, default=False)
+    
+    # NEW: Store JSON config for schedule (Start/End time, Slot duration)
+    scheduling_config = Column(String, default='{"work_start_time": "09:00", "work_end_time": "17:00", "slot_duration": 30, "break_duration": 0}')
 
     user = relationship("User", back_populates="doctor_profile")
     hospital = relationship("Hospital", back_populates="doctors")
@@ -68,9 +71,9 @@ class Patient(Base):
     appointments = relationship("Appointment", back_populates="patient")
     medical_records = relationship("MedicalRecord", back_populates="patient")
     invoices = relationship("Invoice", back_populates="patient")
-    files = relationship("PatientFile", back_populates="patient") # NEW
+    files = relationship("PatientFile", back_populates="patient")
 
-class PatientFile(Base): # NEW TABLE
+class PatientFile(Base):
     __tablename__ = "patient_files"
     id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(Integer, ForeignKey("patients.id"))
@@ -84,7 +87,7 @@ class Appointment(Base):
     __tablename__ = "appointments"
     id = Column(Integer, primary_key=True, index=True)
     doctor_id = Column(Integer, ForeignKey("doctors.id"))
-    patient_id = Column(Integer, ForeignKey("patients.id"))
+    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=True) # Nullable for blocked slots
     start_time = Column(DateTime)
     end_time = Column(DateTime)
     status = Column(String, default="confirmed") 

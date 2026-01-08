@@ -7,7 +7,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Search, Plus, ChevronRight, Loader2, User } from "lucide-react";
 import { DoctorAPI } from "@/lib/api";
 import { useRouter } from "next/navigation";
-import SmartAssistant from "@/components/chat/SmartAssistant"; 
 
 export default function PatientList() {
   const router = useRouter();
@@ -36,13 +35,6 @@ export default function PatientList() {
   const filteredPatients = patients.filter(p => 
     p.name.toLowerCase().includes(search.toLowerCase())
   );
-
-  // --- PREPARE CONTEXT FOR AI ---
-  const patientContext = {
-    total_patients: patients.length,
-    active_patients: patients.filter(p => p.status === 'Active').length,
-    recent_added: patients.slice(0, 5).map(p => `${p.name} (Condition: ${p.condition})`)
-  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -128,13 +120,6 @@ export default function PatientList() {
           )}
         </CardContent>
       </Card>
-
-      {/* 🟣 SMART ASSISTANT WITH PATIENT CONTEXT */}
-      <SmartAssistant 
-        role="doctor" 
-        pageName="Patient List" 
-        pageContext={patientContext} 
-      />
     </div>
   );
 }
