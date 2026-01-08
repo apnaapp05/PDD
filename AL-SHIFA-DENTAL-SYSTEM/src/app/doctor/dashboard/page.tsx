@@ -23,7 +23,8 @@ export default function DoctorDashboard() {
       setLoading(true);
       setError(false);
       const res = await DoctorAPI.getDashboardStats();
-      if(res.data) {
+      // Check if data actually exists
+      if (res && res.data) {
         setStats(res.data);
       } else {
         setError(true);
@@ -54,7 +55,7 @@ export default function DoctorDashboard() {
     } catch(e) { alert("Error completing appointment"); }
   };
 
-  // --- LOADING STATE ---
+  // --- 1. LOADING STATE ---
   if (loading) return (
     <div className="flex h-screen items-center justify-center">
       <Loader2 className="h-8 w-8 animate-spin text-blue-600 mr-2"/>
@@ -62,18 +63,19 @@ export default function DoctorDashboard() {
     </div>
   );
 
-  // --- ERROR STATE (Fixes the crash) ---
+  // --- 2. ERROR STATE (Prevents the Crash) ---
   if (error || !stats) return (
     <div className="flex flex-col h-screen items-center justify-center gap-4">
       <AlertCircle className="h-12 w-12 text-red-500" />
       <h2 className="text-xl font-bold text-slate-900">Failed to load dashboard data</h2>
+      <p className="text-slate-500 text-sm">This usually happens if the database needs a reset.</p>
       <Button onClick={fetchDashboard} variant="outline">
         <RefreshCcw className="h-4 w-4 mr-2"/> Retry
       </Button>
     </div>
   );
 
-  // --- NO PROFILE STATE ---
+  // --- 3. NO PROFILE STATE ---
   if (stats.account_status === "no_profile") return (
     <div className="p-10 text-center">
       <h2 className="text-xl font-bold mb-2">Profile Incomplete</h2>
@@ -82,18 +84,19 @@ export default function DoctorDashboard() {
     </div>
   );
 
+  // --- 4. MAIN DASHBOARD ---
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Medical Dashboard</h1>
-          {/* SAFE ACCESS using optional chaining just in case */}
-          <p className="text-slate-500">Welcome back, Dr. {stats?.doctor_name || "Doctor"}</p>
+          {/* Use optional chaining (?.) just in case */}
+          <p className="text-slate-500">Welcome back, Dr. {stats?.doctor_name}</p>
         </div>
         <Button variant="outline" onClick={fetchDashboard}><RefreshCcw className="h-4 w-4 mr-2"/> Refresh</Button>
       </div>
       
-      {/* AUTO-ANALYSIS */}
+      {/* INSIGHTS */}
       <Card className="bg-gradient-to-r from-indigo-900 to-blue-900 text-white border-none shadow-xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-indigo-100">
@@ -150,44 +153,45 @@ export default function DoctorDashboard() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="divide-y divide-slate-100">
-            {!stats.appointments || stats.appointments.length === 0 ? (
+            {(!stats.appointments || stats.appointments.length === 0) ? (
               <div className="p-10 text-center text-slate-500">No appointments today.</div>
             ) : (
               stats.appointments.map((appt: any) => (
-              <div key={appt.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
-                <div className="flex items-center gap-4">
-                  <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold ${appt.status === 'completed' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
-                    {appt.patient_name ? appt.patient_name[0] : "U"}
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-900">{appt.patient_name || "Unknown"}</p>
-                    <p className="text-xs text-slate-500">{appt.treatment} • {appt.time}</p>
-                  </div>
-                </div>
-                
-                {/* 3-STEP BUTTONS */}
-                <div>
-                  {appt.status === 'confirmed' && (
-                    <Button size="sm" onClick={() => handleStart(appt.id)} className="bg-blue-600 hover:bg-blue-700">
-                      <PlayCircle className="h-4 w-4 mr-1"/> Start
-                    </Button>
-                  )}
-                  {appt.status === 'in_progress' && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-orange-500 bg-orange-50 px-2 py-1 rounded border border-orange-100">In Progress</span>
-                      <Button size="sm" onClick={() => handleComplete(appt.id)} className="bg-green-600 hover:bg-green-700 shadow-sm">
-                        <CheckCircle2 className="h-4 w-4 mr-1"/> Complete
-                      </Button>
+                <div key={appt.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold ${appt.status === 'completed' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                      {appt.patient_name ? appt.patient_name[0] : "U"}
                     </div>
-                  )}
-                  {appt.status === 'completed' && (
-                    <span className="text-green-600 text-xs font-bold flex items-center bg-green-50 px-3 py-1 rounded-full border border-green-200">
-                      <CheckCircle2 className="h-3 w-3 mr-1"/> Completed
-                    </span>
-                  )}
+                    <div>
+                      <p className="font-bold text-slate-900">{appt.patient_name || "Unknown"}</p>
+                      <p className="text-xs text-slate-500">{appt.treatment} • {appt.time}</p>
+                    </div>
+                  </div>
+                  
+                  {/* ACTIONS */}
+                  <div>
+                    {appt.status === 'confirmed' && (
+                      <Button size="sm" onClick={() => handleStart(appt.id)} className="bg-blue-600 hover:bg-blue-700">
+                        <PlayCircle className="h-4 w-4 mr-1"/> Start
+                      </Button>
+                    )}
+                    {appt.status === 'in_progress' && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-orange-500 bg-orange-50 px-2 py-1 rounded border border-orange-100">In Progress</span>
+                        <Button size="sm" onClick={() => handleComplete(appt.id)} className="bg-green-600 hover:bg-green-700 shadow-sm">
+                          <CheckCircle2 className="h-4 w-4 mr-1"/> Complete
+                        </Button>
+                      </div>
+                    )}
+                    {appt.status === 'completed' && (
+                      <span className="text-green-600 text-xs font-bold flex items-center bg-green-50 px-3 py-1 rounded-full border border-green-200">
+                        <CheckCircle2 className="h-3 w-3 mr-1"/> Completed
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )))}
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

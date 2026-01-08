@@ -7,6 +7,7 @@ class UserBase(BaseModel):
     email: str
 
 class UserCreate(UserBase):
+    email: str
     password: str
     full_name: str
     role: str 
@@ -60,7 +61,7 @@ class BlockSlotCreate(BaseModel):
     date: str
     time: Optional[str] = None
     reason: str
-    is_whole_day: bool
+    is_whole_day: bool = False
 
 # --- APPOINTMENTS ---
 class AppointmentCreate(BaseModel):
@@ -125,7 +126,7 @@ class InvoiceOut(BaseModel):
     patient_name: str
     treatment_type: str
 
-# --- NEW: CLINICAL CASES ---
+# --- CLINICAL CASES ---
 class CaseCreate(BaseModel):
     patient_id: int
     title: str

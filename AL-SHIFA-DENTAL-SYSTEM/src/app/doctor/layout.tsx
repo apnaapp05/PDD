@@ -53,7 +53,7 @@ export default function DoctorLayout({ children }: { children: React.ReactNode }
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("role");
-    router.push("/auth/doctor/login");
+    router.push("/auth/role-selection");
   };
 
   const navItems = [

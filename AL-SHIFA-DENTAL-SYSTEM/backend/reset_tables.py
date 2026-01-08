@@ -16,8 +16,8 @@ def seed_test_data():
         # 1. ORGANIZATION (o@o.o / o)
         org = models.User(
             email="o@o.o", password_hash=get_hash("o"),
-            full_name="o o", role="organization", is_email_verified=True,
-            phone_number="111-222-3333"
+            full_name="o o", role="organization", is_email_verified=True
+            # Removed phone_number (not in User model)
         )
         db.add(org)
         db.commit()
@@ -25,7 +25,8 @@ def seed_test_data():
 
         hospital = models.Hospital(
             owner_id=org.id, name="o o", 
-            address="123 Test St", is_verified=True
+            address="123 Test St", is_verified=True,
+            phone_number="111-222-3333" # Moved here (Hospital model has phone_number)
         )
         db.add(hospital)
         db.commit()
@@ -34,8 +35,8 @@ def seed_test_data():
         # 2. DOCTOR (d@d.d / d)
         doc = models.User(
             email="d@d.d", password_hash=get_hash("d"),
-            full_name="d d", role="doctor", is_email_verified=True,
-            phone_number="444-555-6666"
+            full_name="d d", role="doctor", is_email_verified=True
+            # Removed phone_number
         )
         db.add(doc)
         db.commit()
@@ -52,8 +53,8 @@ def seed_test_data():
         # 3. PATIENT (p@p.p / p)
         pat = models.User(
             email="p@p.p", password_hash=get_hash("p"),
-            full_name="p p", role="patient", is_email_verified=True,
-            phone_number="777-888-9999"
+            full_name="p p", role="patient", is_email_verified=True
+            # Removed phone_number
         )
         db.add(pat)
         db.commit()

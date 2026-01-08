@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { DoctorAPI, api } from "@/lib/api";
 import { 
   Clock, RefreshCcw, Loader2, Plus, Bell, Save, 
-  ChevronLeft, ChevronRight, Ban 
+  ChevronLeft, ChevronRight, Ban, CalendarIcon 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
-// --- DATE HELPER (Simple version to avoid date-fns dependency issues if not installed) ---
+// --- DATE HELPER ---
 const formatDateForAPI = (d: Date) => d.toISOString().split('T')[0];
 const addDays = (d: Date, days: number) => { const r = new Date(d); r.setDate(r.getDate() + days); return r; };
 
@@ -38,8 +38,13 @@ export default function DoctorSchedulePage() {
   });
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // Blocking State
-  const [blockForm, setBlockForm] = useState({ time: "", reason: "Personal", is_whole_day: false });
+  // Blocking State (Updated with 'date' field)
+  const [blockForm, setBlockForm] = useState({ 
+    date: formatDateForAPI(new Date()), // Default to today
+    time: "", 
+    reason: "Personal", 
+    is_whole_day: false 
+  });
   
   const prevCountRef = useRef(0);
 
@@ -101,21 +106,20 @@ export default function DoctorSchedulePage() {
   const handleBlockSlot = async () => {
     try {
         await DoctorAPI.blockSlot({
-            date: formatDateForAPI(selectedDate),
+            date: blockForm.date, // Use the selected date from the form
             time: blockForm.time,
             reason: blockForm.reason,
             is_whole_day: blockForm.is_whole_day
         });
         alert("Slot blocked successfully");
-        setBlockForm({ time: "", reason: "Personal", is_whole_day: false });
-        fetchSchedule();
+        setBlockForm({ ...blockForm, time: "", reason: "Personal", is_whole_day: false });
+        fetchSchedule(); // Refresh grid
     } catch(e) { alert("Failed to block slot. Check for overlaps."); }
   };
 
   const handlePrev = () => setSelectedDate(prev => addDays(prev, -1));
   const handleNext = () => setSelectedDate(prev => addDays(prev, 1));
   
-  // 🟢 NATIVE DATE PICKER HANDLER
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.valueAsDate) {
         setSelectedDate(e.target.valueAsDate);
@@ -293,16 +297,31 @@ export default function DoctorSchedulePage() {
            </Card>
         </TabsContent>
 
+        {/* --- BLOCK TIME TAB (Updated with Date Picker) --- */}
         <TabsContent value="block">
             <Card className="max-w-md mx-auto mt-8 border-red-100 shadow-sm">
                 <CardHeader className="bg-red-50/50 pb-4 border-b border-red-100">
                     <CardTitle className="text-red-900 flex items-center gap-2"><Ban className="h-5 w-5"/> Block Time Slot</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6 pt-6">
+                    {/* Date Picker for Blocking */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold uppercase text-slate-500">Date to Block</label>
+                        <div className="relative">
+                            <CalendarIcon className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                            <Input 
+                                type="date" 
+                                className="pl-10"
+                                value={blockForm.date} 
+                                onChange={e => setBlockForm({...blockForm, date: e.target.value})} 
+                            />
+                        </div>
+                    </div>
+
                     <div className="flex items-center space-x-2 border p-3 rounded-lg border-slate-200">
                         <Checkbox id="wholeDay" checked={blockForm.is_whole_day} onCheckedChange={(c) => setBlockForm({...blockForm, is_whole_day: !!c})} />
                         <label htmlFor="wholeDay" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                            Block Whole Day ({formatDateForAPI(selectedDate)})
+                            Block Whole Day
                         </label>
                     </div>
                     {!blockForm.is_whole_day && (
