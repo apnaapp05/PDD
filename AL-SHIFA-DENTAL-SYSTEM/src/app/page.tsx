@@ -115,6 +115,15 @@ export default function LandingPage() {
               Get Started <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </Link>
+          
+          <Button 
+            size="lg" 
+            variant="outline"
+            className="h-14 px-10 text-lg rounded-full border-2 border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-white/50 backdrop-blur-sm transition-all w-full sm:w-auto"
+            onClick={() => alert("Usage guide page coming soon!")}
+          >
+            How it Works
+          </Button>
         </div>
 
         {/* Feature Pills */}
