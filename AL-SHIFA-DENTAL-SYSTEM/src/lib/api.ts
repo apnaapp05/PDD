@@ -16,6 +16,8 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// ... AuthAPI, AdminAPI, OrganizationAPI, DoctorAPI (keep as is) ...
+
 export const AuthAPI = {
   login: async (email, password) => {
     const params = new URLSearchParams();
@@ -66,29 +68,21 @@ export const DoctorAPI = {
   getPatientDetails: async (id: number) => api.get(`/doctor/patients/${id}`),
   addMedicalRecord: async (id: number, data: { diagnosis: string; prescription: string; notes: string }) =>
     api.post(`/doctor/patients/${id}/records`, data),
-  
-  // Inventory
   getInventory: async () => api.get("/doctor/inventory"),
   addInventoryItem: async (data: { name: string; quantity: number; unit: string; threshold: number }) => 
     api.post("/doctor/inventory", data),
   updateStock: async (id: number, quantity: number) => api.put(`/doctor/inventory/${id}`, { quantity }),
   uploadInventory: async (formData: FormData) => 
     api.post("/doctor/inventory/upload", formData, { headers: { "Content-Type": "multipart/form-data" } }),
-
-  // Schedule & Appointments
   getSchedule: async () => api.get("/doctor/schedule"),
   blockSlot: async (data: { date: string; time?: string; reason: string; is_whole_day: boolean }) => 
     api.post("/doctor/schedule/block", data),
-  
-  // Treatment Management
   getTreatments: async () => api.get("/doctor/treatments"),
   createTreatment: async (data: { name: string; cost: number; description?: string }) => 
     api.post("/doctor/treatments", data),
   linkInventory: async (treatmentId: number, data: { item_id: number; quantity: number }) => 
     api.post(`/doctor/treatments/${treatmentId}/link-inventory`, data),
-
   completeAppointment: async (id: number) => api.post(`/doctor/appointments/${id}/complete`),
-
   getFinance: async () => api.get("/doctor/finance"),
 };
 
@@ -99,6 +93,9 @@ export const PatientAPI = {
   getMyAppointments: async () => api.get("/patient/appointments"),
   cancelAppointment: async (id: number) => api.put(`/patient/appointments/${id}/cancel`),
   getMyRecords: async () => api.get("/patient/records"),
+  // NEW INVOICE METHODS
+  getMyInvoices: async () => api.get("/patient/invoices"),
+  getInvoiceDetail: async (id: number) => api.get(`/patient/invoices/${id}`),
 };
 
 export default api;

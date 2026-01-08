@@ -12,8 +12,7 @@ import {
   LogOut, 
   Menu, 
   X,
-  Calendar,
-  Bot // Added Icon for AI Agents
+  Calendar
 } from "lucide-react";
 import { AuthAPI } from "@/lib/api";
 
@@ -40,13 +39,10 @@ export default function DoctorLayout({ children }: { children: React.ReactNode }
         const res = await AuthAPI.getMe();
         const name = res.data.full_name || "Doctor";
         setDocName(name);
-        // Safely generate initials
         const init = name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase();
         setInitials(init || "DR");
       } catch (error) {
         console.error("Failed to load doctor details", error);
-        // Optional: Redirect if unauthorized, or let the middleware handle it
-        // router.push("/auth/doctor/login");
       }
     };
     fetchProfile();
@@ -62,7 +58,6 @@ export default function DoctorLayout({ children }: { children: React.ReactNode }
 
   const navItems = [
     { label: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
-    { label: "AI Agents", href: "/doctor/agents", icon: Bot }, // NEW LINK ADDED HERE
     { label: "My Schedule", href: "/doctor/schedule", icon: Calendar },
     { label: "My Patients", href: "/doctor/patients", icon: Users },
     { label: "Inventory", href: "/doctor/inventory", icon: Package },

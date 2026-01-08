@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import or_, func, and_
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
@@ -120,7 +119,7 @@ org_router = APIRouter(prefix="/organization", tags=["Organization"])
 doctor_router = APIRouter(prefix="/doctor", tags=["Doctor"])
 public_router = APIRouter(tags=["Public"]) 
 
-# --- PUBLIC ROUTES ---
+# ================= PUBLIC ROUTES =================
 @public_router.get("/")
 def health_check():
     return {"status": "running", "system": "Al-Shifa Dental API"}
@@ -243,7 +242,66 @@ def get_my_records(user: models.User = Depends(get_current_user), db: Session = 
         })
     return results
 
-# --- AUTH ROUTES ---
+# --- NEW: PATIENT INVOICES ---
+@public_router.get("/patient/invoices")
+def get_patient_invoices(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "patient": raise HTTPException(403, "Access denied")
+    patient = db.query(models.Patient).filter(models.Patient.user_id == user.id).first()
+    if not patient: return []
+    
+    invoices = db.query(models.Invoice).filter(models.Invoice.patient_id == patient.id).order_by(models.Invoice.created_at.desc()).all()
+    results = []
+    for inv in invoices:
+        appt = inv.appointment
+        doc = appt.doctor if appt else None
+        results.append({
+            "id": inv.id,
+            "date": inv.created_at.strftime("%Y-%m-%d"),
+            "amount": inv.amount,
+            "status": inv.status,
+            "treatment": appt.treatment_type if appt else "N/A",
+            "doctor_name": doc.user.full_name if doc and doc.user else "Unknown"
+        })
+    return results
+
+@public_router.get("/patient/invoices/{id}")
+def get_patient_invoice_detail(id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "patient": raise HTTPException(403, "Access denied")
+    patient = db.query(models.Patient).filter(models.Patient.user_id == user.id).first()
+    invoice = db.query(models.Invoice).filter(models.Invoice.id == id, models.Invoice.patient_id == patient.id).first()
+    if not invoice: raise HTTPException(404, "Invoice not found")
+    
+    appt = invoice.appointment
+    doctor = appt.doctor
+    hospital = doctor.hospital
+    
+    return {
+        "id": invoice.id,
+        "date": invoice.created_at.strftime("%Y-%m-%d"),
+        "amount": invoice.amount,
+        "status": invoice.status,
+        "hospital": {
+            "name": hospital.name,
+            "address": hospital.address,
+            "phone": hospital.owner.phone_number or "N/A"
+        },
+        "doctor": {
+            "name": doctor.user.full_name,
+            "specialization": doctor.specialization
+        },
+        "patient": {
+            "name": user.full_name,
+            "age": patient.age,
+            "gender": patient.gender,
+            "id": patient.id
+        },
+        "treatment": {
+            "name": appt.treatment_type,
+            "notes": appt.notes
+        }
+    }
+
+# ================= AUTH ROUTES =================
 @auth_router.get("/me", response_model=schemas.UserOut)
 def get_current_user_profile(user: models.User = Depends(get_current_user)):
     return user
@@ -355,7 +413,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         
     return {"access_token": create_access_token({"sub": str(user.id), "role": user.role}), "token_type": "bearer", "role": user.role}
 
-# --- ADMIN ROUTES ---
+# ================= ADMIN ROUTES =================
 @admin_router.get("/stats")
 def get_admin_stats(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "admin": raise HTTPException(403, "Admin only")
@@ -363,7 +421,7 @@ def get_admin_stats(user: models.User = Depends(get_current_user), db: Session =
         "doctors": db.query(models.Doctor).count(),
         "patients": db.query(models.Patient).count(),
         "organizations": db.query(models.Hospital).count(),
-        "revenue": 0 # Placeholder for platform revenue
+        "revenue": 0 
     }
 
 @admin_router.get("/doctors")
@@ -390,7 +448,10 @@ def get_all_organizations(user: models.User = Depends(get_current_user), db: Ses
         "address": h.address, 
         "owner_email": h.owner.email if h.owner else "",
         "is_verified": h.is_verified,
-        "doctor_count": len(h.doctors)
+        "doctor_count": len(h.doctors),
+        "pending_address": h.pending_address,
+        "pending_lat": h.pending_lat,
+        "pending_lng": h.pending_lng
     } for h in orgs]
 
 @admin_router.get("/patients")
@@ -409,29 +470,25 @@ def get_all_patients(user: models.User = Depends(get_current_user), db: Session 
 @admin_router.delete("/delete/{type}/{id}")
 def delete_entity(type: str, id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "admin": raise HTTPException(403, "Admin only")
-    
     try:
         if type == "doctor":
             record = db.query(models.Doctor).filter(models.Doctor.id == id).first()
             if not record: raise HTTPException(404, "Doctor not found")
             user_account = record.user
-            db.delete(record) # Delete profile
-            if user_account: db.delete(user_account) # Delete login
-            
+            db.delete(record)
+            if user_account: db.delete(user_account)
         elif type == "organization":
             record = db.query(models.Hospital).filter(models.Hospital.id == id).first()
             if not record: raise HTTPException(404, "Organization not found")
             user_account = record.owner
             db.delete(record)
             if user_account: db.delete(user_account)
-            
         elif type == "patient":
             record = db.query(models.Patient).filter(models.Patient.id == id).first()
             if not record: raise HTTPException(404, "Patient not found")
             user_account = record.user
             db.delete(record)
             if user_account: db.delete(user_account)
-            
         else: raise HTTPException(400, "Invalid type")
         
         db.commit()
@@ -440,21 +497,35 @@ def delete_entity(type: str, id: int, user: models.User = Depends(get_current_us
         db.rollback()
         raise HTTPException(500, f"Delete failed: {str(e)}")
 
-# Keep existing approve endpoint
 @admin_router.post("/approve-account/{entity_id}")
 def approve_account(entity_id: int, type: str = Query(...), user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "admin": raise HTTPException(403, "Admin only")
+    
     if type == "organization":
         hospital = db.query(models.Hospital).filter(models.Hospital.id == entity_id).first()
-        if hospital:
-            if hospital.pending_address: hospital.address, hospital.pincode, hospital.lat, hospital.lng, hospital.pending_address = hospital.pending_address, hospital.pending_pincode, hospital.pending_lat, hospital.pending_lng, None
-            hospital.is_verified = True; db.commit(); return {"message": "Approved"}
+        if not hospital: raise HTTPException(404, "Hospital not found")
+        
+        if hospital.pending_address:
+            hospital.address = hospital.pending_address
+            hospital.pincode = hospital.pending_pincode
+            hospital.lat = hospital.pending_lat
+            hospital.lng = hospital.pending_lng
+            hospital.pending_address = None
+            hospital.pending_pincode = None
+            hospital.pending_lat = None
+            hospital.pending_lng = None
+            
+        hospital.is_verified = True
+        db.commit()
+        return {"message": "Approved and Location Updated"}
+        
     elif type == "doctor":
         d = db.query(models.Doctor).filter(models.Doctor.id == entity_id).first(); 
         if d: d.is_verified = True; db.commit(); return {"message": "Approved"}
+        
     raise HTTPException(404, "Not found")
 
-# --- ORGANIZATION ROUTES ---
+# ================= ORGANIZATION ROUTES =================
 @org_router.get("/details")
 def get_org_details(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "organization": raise HTTPException(403, "Access denied")
@@ -531,7 +602,7 @@ def get_org_inventory(user: models.User = Depends(get_current_user), db: Session
     if not hospital: return []
     return db.query(models.InventoryItem).filter(models.InventoryItem.hospital_id == hospital.id).all()
 
-# --- DOCTOR ROUTES ---
+# ================= DOCTOR ROUTES =================
 @doctor_router.post("/treatments")
 def create_treatment(data: schemas.TreatmentCreate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "doctor": raise HTTPException(403, "Access denied")
@@ -542,7 +613,7 @@ def create_treatment(data: schemas.TreatmentCreate, user: models.User = Depends(
     db.add(new_t); db.commit(); db.refresh(new_t)
     return new_t
 
-@doctor_router.get("/treatments", response_model=list[schemas.TreatmentOut])
+@doctor_router.get("/treatments")
 def get_treatments(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     hospital_id = None
     if user.role == "organization":
@@ -552,7 +623,26 @@ def get_treatments(user: models.User = Depends(get_current_user), db: Session = 
         d = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
         if d: hospital_id = d.hospital_id
     if not hospital_id: return []
-    return db.query(models.Treatment).filter(models.Treatment.hospital_id == hospital_id).all()
+    
+    # Return treatments WITH their linked recipes
+    treatments = db.query(models.Treatment).filter(models.Treatment.hospital_id == hospital_id).all()
+    results = []
+    for t in treatments:
+        links = []
+        for link in t.required_items:
+            links.append({
+                "item_name": link.item.name,
+                "quantity_required": link.quantity_required,
+                "unit": link.item.unit
+            })
+        results.append({
+            "id": t.id, 
+            "name": t.name, 
+            "cost": t.cost, 
+            "description": t.description,
+            "links": links
+        })
+    return results
 
 @doctor_router.post("/treatments/{treatment_id}/link-inventory")
 def link_inventory(treatment_id: int, data: schemas.TreatmentLinkCreate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -650,6 +740,43 @@ def get_doctor_finance(user: models.User = Depends(get_current_user), db: Sessio
 
     return { "total_revenue": total_paid, "total_pending": total_pending, "invoices": formatted_invoices }
 
+# NEW: GET INVOICE DETAIL (For Printing)
+@doctor_router.get("/invoices/{id}")
+def get_invoice_detail(id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "doctor": raise HTTPException(403, "Access denied")
+    invoice = db.query(models.Invoice).filter(models.Invoice.id == id).first()
+    if not invoice: raise HTTPException(404, "Invoice not found")
+    
+    appt = invoice.appointment
+    patient = invoice.patient
+    doctor = appt.doctor
+    hospital = doctor.hospital
+    
+    return {
+        "id": invoice.id,
+        "date": invoice.created_at.strftime("%Y-%m-%d"),
+        "amount": invoice.amount,
+        "status": invoice.status,
+        "hospital": {
+            "name": hospital.name,
+            "address": hospital.address,
+            "phone": hospital.owner.phone_number or "N/A"
+        },
+        "doctor": {
+            "name": doctor.user.full_name,
+            "specialization": doctor.specialization
+        },
+        "patient": {
+            "name": patient.user.full_name,
+            "age": patient.age,
+            "gender": patient.gender
+        },
+        "treatment": {
+            "name": appt.treatment_type,
+            "notes": appt.notes
+        }
+    }
+
 @doctor_router.post("/appointments/{id}/complete")
 def complete_appointment(id: int, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "doctor": raise HTTPException(403, "Access denied")
@@ -673,7 +800,7 @@ def complete_appointment(id: int, user: models.User = Depends(get_current_user),
         
         invoice = models.Invoice(appointment_id=appt.id, patient_id=appt.patient_id, amount=treatment.cost, status="pending")
         db.add(invoice)
-        messages.append(f"Invoice generated: ${treatment.cost}")
+        messages.append(f"Invoice generated: Rs. {treatment.cost}")
     else: messages.append("Warning: Treatment not in catalog. No invoice/deduction.")
 
     appt.status = "completed"

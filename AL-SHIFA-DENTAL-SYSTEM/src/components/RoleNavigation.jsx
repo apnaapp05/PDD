@@ -6,10 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 export default function RoleNavigation() {
   const pathname = usePathname();
   const router = useRouter();
-
-  // Guard: if pathname is null, default to empty
   const currentPath = pathname || "";
-  const role = currentPath.split("/")[2] || "patient"; // e.g. /doctor/dashboard -> doctor
+  const role = currentPath.split("/")[2] || "patient"; 
 
   const navMap = {
     admin: [
@@ -28,18 +26,18 @@ export default function RoleNavigation() {
       { label: "Inventory", path: "/doctor/inventory" },
       { label: "Finance", path: "/doctor/finance" },
       { label: "Patients", path: "/doctor/patients" },
-      { label: "Treatment Recipes", path: "/doctor/treatments" }, // Added this useful link
+      { label: "Treatments", path: "/doctor/treatments" },
       { label: "Profile", path: "/doctor/profile" }
     ],
     patient: [
       { label: "Dashboard", path: "/patient/dashboard" },
       { label: "My Appointments", path: "/patient/appointments" },
       { label: "Book New", path: "/patient/appointments/new" },
-      { label: "Medical Records", path: "/patient/records" }
+      { label: "Medical Records", path: "/patient/records" },
+      { label: "My Invoices", path: "/patient/invoices" } // NEW LINK
     ]
   };
 
-  // Fallback to patient menu if role is unidentified
   const items = navMap[role] || navMap['patient'];
 
   return (

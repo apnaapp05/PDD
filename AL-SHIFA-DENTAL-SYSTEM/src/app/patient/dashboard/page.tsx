@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Calendar, Clock, Plus, FileText, Phone, Sparkles, LogOut, XCircle, User, CalendarDays, MapPin } from "lucide-react";
+import { Calendar, Clock, Plus, FileText, Sparkles, LogOut, XCircle, User, CalendarDays, MapPin } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { PatientAPI, AuthAPI } from "@/lib/api"; 
 
@@ -61,7 +61,7 @@ export default function PatientDashboard() {
     router.push('/auth/role-selection');
   };
 
-  // --- NEW: DIRECT CANCELLATION ---
+  // --- DIRECT CANCELLATION ---
   const handleCancel = async () => {
     if (!appointment) return;
     
@@ -278,21 +278,6 @@ export default function PatientDashboard() {
                   </div>
                 </div>
               </div>
-            </Link>
-
-            {/* 3. EMERGENCY */}
-            <Link href="/patient/emergency">
-                <div className="group relative h-40 overflow-hidden rounded-[24px] bg-gradient-to-r from-red-50 to-red-100 p-6 border border-red-100 shadow-sm cursor-pointer transition-all hover:shadow-red-500/10">
-                  <div className="flex flex-col h-full justify-between">
-                    <div className="h-12 w-12 rounded-full bg-red-200 flex items-center justify-center text-red-600">
-                        <Phone className="h-6 w-6" />
-                    </div>
-                    <div>
-                        <h3 className="text-lg font-bold text-red-900">Emergency</h3>
-                        <p className="text-sm text-red-600">Immediate Call</p>
-                    </div>
-                  </div>
-                </div>
             </Link>
 
           </div>
