@@ -13,7 +13,8 @@ import {
   AlertTriangle, 
   RefreshCcw, 
   Stethoscope, 
-  ChevronRight 
+  ChevronRight,
+  TrendingUp 
 } from "lucide-react";
 import { DoctorAPI, AuthAPI } from "@/lib/api";
 import { useRouter } from "next/navigation";
@@ -46,13 +47,13 @@ export default function DoctorDashboard() {
       // Fetch Dashboard Stats AND Inventory Count in parallel
       const [dashboardRes, inventoryRes] = await Promise.all([
         DoctorAPI.getDashboardStats(),
-        DoctorAPI.getInventory().catch(() => ({ data: [] })) // Fail safe if inventory API errors
+        DoctorAPI.getInventory().catch(() => ({ data: [] })) // Fail safe
       ]);
 
       setStats(dashboardRes.data);
       setInventoryCount(inventoryRes.data.length || 0);
       
-      // If no profile, fetch hospitals for the join form
+      // If no profile, fetch hospitals
       if (dashboardRes.data.account_status === "no_profile") {
          const hospRes = await AuthAPI.getVerifiedHospitals();
          setHospitals(hospRes.data);
@@ -91,7 +92,7 @@ export default function DoctorDashboard() {
   };
 
   const handleComplete = async (apptId: number, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click
+    e.stopPropagation(); 
     if(!confirm("Mark appointment as complete? This will generate a bill and deduct inventory.")) return;
     try {
       const res = await DoctorAPI.completeAppointment(apptId);
@@ -240,7 +241,7 @@ export default function DoctorDashboard() {
           </CardContent>
         </Card>
 
-        {/* Inventory Card (NEW) */}
+        {/* Inventory Card */}
         <Card 
           onClick={() => router.push("/doctor/inventory")}
           className="border-l-4 border-l-orange-500 shadow-sm hover:shadow-lg transition-all cursor-pointer group bg-white"
@@ -323,7 +324,7 @@ export default function DoctorDashboard() {
           </CardContent>
         </Card>
 
-        {/* 3. AI PANEL (Placeholder for now) */}
+        {/* 3. UPDATED SMART ASSISTANT (With Revenue Analysis) */}
         <Card className="col-span-3 bg-gradient-to-br from-indigo-50 via-white to-purple-50 border border-indigo-100 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-indigo-900">
@@ -342,7 +343,7 @@ export default function DoctorDashboard() {
                 </p>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   Your schedule has <strong>{stats.today_count} patients</strong> today. 
-                  Expected finish time: <strong>5:30 PM</strong> based on average treatment duration.
+                  Expected finish time: <strong>5:30 PM</strong>.
                 </p>
               </div>
               
@@ -356,6 +357,24 @@ export default function DoctorDashboard() {
                     : "✅ Inventory levels look healthy for today's procedures."}
                 </p>
               </div>
+
+              {/* NEW: REVENUE ANALYSIS SECTION */}
+              <div className="p-4 bg-white/80 backdrop-blur rounded-xl border border-green-100 shadow-sm">
+                <p className="text-sm text-green-900 font-bold mb-1 flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" /> Revenue Insight
+                </p>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Total revenue: <strong>${stats.revenue}</strong>
+                  {stats.today_count > 0 && (
+                    <> • Avg/Patient: <strong>${Math.round(stats.revenue / stats.today_count)}</strong></>
+                  )}
+                  <br/>
+                  <span className="text-green-600 font-medium block mt-1">
+                    {stats.revenue > 0 ? "📈 Performance is on track." : "Waiting for completed appointments."}
+                  </span>
+                </p>
+              </div>
+
             </div>
           </CardContent>
         </Card>

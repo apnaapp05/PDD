@@ -22,7 +22,6 @@ import models
 import database
 import schemas
 from notifications.email import EmailAdapter
-from agents.router import agent_router 
 
 # --- LOGGING SETUP ---
 logging.basicConfig(level=logging.INFO)
@@ -74,7 +73,6 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     yield
-    # Shutdown (if needed)
 
 # --- UTILS ---
 def get_db():
@@ -839,7 +837,6 @@ def update_case(case_id: int, data: schemas.CaseUpdate, user: models.User = Depe
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-app.include_router(agent_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(org_router)

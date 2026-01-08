@@ -4,34 +4,11 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 from agents.base_agent import BaseAgent
+import json
 
 # ==========================================================
-# 1. STRUCTURED I/O
+# 1. MOCK DATA (Ideally connected to DB)
 # ==========================================================
-
-class RevenueInput(BaseModel):
-    agent_type: str = Field(default="revenue")
-    role: str                 
-    organization_id: Optional[str] = "ORG_1001" # Default for demo
-    doctor_id: Optional[str] = None
-    intent: str               
-    period: str = "monthly"   
-
-
-class RevenueResponse(BaseModel):
-    role: str
-    period: str
-    summary: Optional[dict] = None
-    breakdown: Optional[List[dict]] = None
-    insights: Optional[List[str]] = None
-    message: str
-    timestamp: str
-
-
-# ==========================================================
-# 2. MOCK REVENUE DATA 
-# ==========================================================
-
 REVENUE_DATA = {
     "ORG_1001": {
         "currency": "INR",
@@ -42,112 +19,70 @@ REVENUE_DATA = {
     }
 }
 
-
-# ==========================================================
-# 3. REVENUE INTELLIGENCE ENGINE
-# ==========================================================
-
-class RevenueIntelligence:
-    @staticmethod
-    def calculate_doctor_revenue(appointments: int, avg_fee: int) -> int:
-        return appointments * avg_fee
-
-    @staticmethod
-    def generate_insights(breakdown: List[dict]) -> List[str]:
-        if not breakdown: return []
-        top_doctor = max(breakdown, key=lambda x: x["revenue"])
-        return [f"🏆 Top performing doctor: {top_doctor['doctor_name']} ({top_doctor['revenue']})"]
-
-    @staticmethod
-    def forecast_next_period(total_revenue: int) -> int:
-        return int(total_revenue * 1.10) # Simple +10% forecast
-
-
-# ==========================================================
-# 4. REVENUE AGENT
-# ==========================================================
-
 class RevenueAgent(BaseAgent):
     def __init__(self):
-        # FIX: Added the missing 'instructions' argument here
         super().__init__(
             name="Revenue Agent", 
-            instructions="You are a helpful financial assistant for a dental clinic. Analyze revenue data and provide summaries."
+            instructions="""
+            You are a financial analyst for a dental clinic.
+            Your job is to analyze revenue data and provide insights.
+            
+            You have access to a dataset (REVENUE_DATA).
+            When a user asks a question, determine:
+            1. The Intent: 'summary', 'doctor_breakdown', or 'forecast'.
+            2. The Period: 'daily', 'weekly', or 'monthly'.
+            3. Specific Doctor: If they ask about a specific person.
+            """
         )
 
     async def handle(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        user_query = payload.get("user_query", "")
+        role = payload.get("role", "admin")
         
-        # --- NLP LAYER: CONVERT NATURAL LANGUAGE TO INTENT ---
-        # If 'intent' is missing, guess it from the user query
-        if "intent" not in payload and "user_query" in payload:
-            q = payload["user_query"].lower()
-            
-            # 1. Period Detection
-            if "week" in q: payload["period"] = "weekly"
-            elif "day" in q or "daily" in q or "today" in q: payload["period"] = "daily"
-            else: payload["period"] = "monthly"
-
-            # 2. Intent Detection
-            if "forecast" in q or "prediction" in q or "future" in q or "next" in q or "going to be" in q:
-                payload["intent"] = "forecast"
-            elif "doctor" in q or "breakdown" in q or "who" in q:
-                payload["intent"] = "doctor_breakdown"
-            else:
-                payload["intent"] = "summary"
-
-        # Apply defaults if missing from router
-        if "role" not in payload: payload["role"] = "admin"
-        if "organization_id" not in payload: payload["organization_id"] = "ORG_1001"
-
-        try:
-            data = RevenueInput(**payload)
-        except Exception as e:
-            return {"message": f"I couldn't understand that request. Error: {str(e)}"}
-
-        # --- LOGIC ---
-        org_data = REVENUE_DATA.get(data.organization_id)
-        if not org_data:
-            # Fallback to default mock if specific ID not found
-            org_data = REVENUE_DATA["ORG_1001"]
-
+        # 1. THINK: Use LLM to understand Natural Language
+        # We ask the AI to categorize the request instead of using rigid if/else keywords
+        decision = self.think(user_query, context=f"User Role: {role}")
+        
+        # Default values
+        intent = "summary"
+        period = "monthly"
+        
+        # If LLM parsed it as a tool call (conceptual), extract params
+        if decision.status == "PENDING_TOOL":
+            args = decision.tool_call.get("arguments", {})
+            intent = args.get("intent", "summary")
+            period = args.get("period", "monthly")
+        
+        # 2. LOGIC: Calculate Data
+        org_data = REVENUE_DATA["ORG_1001"]
         currency = org_data["currency"]
         doctors = org_data["doctors"]
-        breakdown = []
-        total_revenue = 0
-
-        for doc_id, info in doctors.items():
-            revenue = RevenueIntelligence.calculate_doctor_revenue(info["appointments"], info["avg_fee"])
-            total_revenue += revenue
-            breakdown.append({
-                "doctor_id": doc_id, "doctor_name": info["name"],
-                "appointments": info["appointments"], "revenue": revenue
-            })
-
-        # --- RESPONSE GENERATION ---
         
-        if data.intent == "summary":
-            return RevenueResponse(
-                role=data.role, period=data.period,
-                summary={"total_revenue": total_revenue, "currency": currency},
-                message=f"Total calculated revenue for this {data.period} period is {currency} {total_revenue:,}.",
-                timestamp=datetime.utcnow().isoformat()
-            ).dict()
+        total_revenue = 0
+        breakdown = []
+        
+        for doc_id, info in doctors.items():
+            rev = info["appointments"] * info["avg_fee"]
+            total_revenue += rev
+            breakdown.append({"name": info["name"], "revenue": rev, "count": info["appointments"]})
 
-        if data.intent == "doctor_breakdown":
-            insights = RevenueIntelligence.generate_insights(breakdown)
-            return RevenueResponse(
-                role=data.role, period=data.period, breakdown=breakdown, insights=insights,
-                message="Here is the breakdown by doctor.",
-                timestamp=datetime.utcnow().isoformat()
-            ).dict()
+        # 3. GENERATE RESPONSE
+        response_text = ""
+        
+        if "forecast" in user_query.lower() or intent == "forecast":
+            forecast = int(total_revenue * 1.10)
+            response_text = f"Based on current trends, next month's revenue is projected to be {currency} {forecast:,} (+10%)."
+            
+        elif "doctor" in user_query.lower() or intent == "doctor_breakdown":
+            response_text = "Here is the performance breakdown:\n"
+            for doc in breakdown:
+                response_text += f"- **{doc['name']}**: {currency} {doc['revenue']:,} ({doc['count']} patients)\n"
+                
+        else: # Default Summary
+            response_text = f"Total revenue for this month is **{currency} {total_revenue:,}**."
 
-        if data.intent == "forecast":
-            forecast = RevenueIntelligence.forecast_next_period(total_revenue)
-            return RevenueResponse(
-                role=data.role, period=data.period,
-                summary={"current_revenue": total_revenue, "forecast_next_period": forecast, "currency": currency},
-                message=f"Based on current trends, your estimated income for next {data.period.replace('ly','')} is approx {currency} {forecast:,} (+10%).",
-                timestamp=datetime.utcnow().isoformat()
-            ).dict()
-
-        return {"message": "I didn't understand. Try asking about 'revenue summary', 'doctor performance', or 'income forecast'."}
+        return {
+            "response": response_text,
+            "action_taken": intent,
+            "data": {"total": total_revenue, "breakdown": breakdown}
+        }
